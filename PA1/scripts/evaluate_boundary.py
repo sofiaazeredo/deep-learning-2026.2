@@ -321,10 +321,14 @@ def main():
 
     for threshold in IOU_THRESHOLDS:
 
-        values = threshold_scores[float(threshold)]
-	print(
+        values = threshold_scores[
+            float(threshold)
+        ]
+    
+        print(
             f"AP@{threshold:.2f}: "
             f"{np.mean(values):.4f}"
+            )
     print()
     print(
         f"Saved: {output_path}"
