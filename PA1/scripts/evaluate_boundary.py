@@ -1,6 +1,6 @@
 import csv
 from pathlib import Path
-
+import argparse
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -34,9 +34,29 @@ RESULTS_DIR = Path(
 SEED = 42
 BATCH_SIZE = 1
 
+SPLIT_SEED = 42
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        required=True
+    )
+
+    parser.add_argument(
+        "--name",
+        type=str,
+        required=True
+    )
+
+    return parser.parse_args()
 
 def main():
 
+    args = parse_args()
     device = torch.device(
         "cuda"
         if torch.cuda.is_available()
@@ -57,7 +77,7 @@ def main():
 
     _, _, test_dataset = create_splits(
         dataset,
-        seed=SEED,
+        seed=SPLIT_SEED,
         train_ratio=0.8,
         val_ratio=0.1
     )
@@ -83,7 +103,7 @@ def main():
     ).to(device)
 
     checkpoint = torch.load(
-        CHECKPOINT_PATH,
+        args.checkpoint,
         map_location=device
     )
 
@@ -116,7 +136,7 @@ def main():
 
     output_path = (
         RESULTS_DIR
-        / "boundary_test_metrics.csv"
+        / f"{args.name}_test_metrics.csv"
     )
 
     rows = []

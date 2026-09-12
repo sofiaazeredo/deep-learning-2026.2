@@ -22,7 +22,7 @@ LEARNING_RATE = 1e-3
 
 TRAIN_RATIO = 0.8
 VAL_RATIO = 0.1
-
+SPLIT_SEED = 42
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -246,7 +246,7 @@ def main():
 
     train_dataset, val_dataset, _ = create_splits(
         dataset,
-        seed=args.seed,
+        seed=SPLIT_SEED,
         train_ratio=TRAIN_RATIO,
         val_ratio=VAL_RATIO,
     )
@@ -428,6 +428,8 @@ def main():
                         val_loss,
                     "seed":
                         args.seed,
+                    "split_seed":
+                        SPLIT_SEED,
                     "loss":
                         args.loss,
                     "gamma":

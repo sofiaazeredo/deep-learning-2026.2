@@ -60,3 +60,90 @@ def mask_iou(mask_a, mask_b):
         return 0.0
 
     return intersection / union
+
+def merge_tile_instances(
+    global_mask,
+    tile_instances,
+    x,
+    y,
+    iou_threshold=0.5
+):
+    """
+    Merge instance IDs from one tile into a global instance mask.
+
+    Existing instances with sufficient overlap IoU are reused.
+    Otherwise a new global instance ID is created.
+    """
+
+    h, w = tile_instances.shape
+
+    region = global_mask[
+        y:y + h,
+        x:x + w
+    ]
+
+    local_ids = np.unique(
+        tile_instances
+    )
+
+    local_ids = local_ids[
+        local_ids != 0
+    ]
+
+    next_global_id = (
+        int(global_mask.max()) + 1
+    )
+
+    for local_id in local_ids:
+
+        local_mask = (
+            tile_instances == local_id
+        )
+
+        overlapping_ids = np.unique(
+            region[local_mask]
+        )
+
+        overlapping_ids = overlapping_ids[
+            overlapping_ids != 0
+        ]
+
+        best_id = None
+        best_iou = 0.0
+
+        for global_id in overlapping_ids:
+
+            global_instance = (
+                region == global_id
+            )
+
+            score = mask_iou(
+                local_mask,
+                global_instance
+            )
+
+            if score > best_iou:
+                best_iou = score
+                best_id = global_id
+
+        if (
+            best_id is not None
+            and best_iou >= iou_threshold
+        ):
+            region[
+                local_mask
+            ] = best_id
+
+        else:
+            region[
+                local_mask
+            ] = next_global_id
+
+            next_global_id += 1
+
+    global_mask[
+        y:y + h,
+        x:x + w
+    ] = region
+
+    return global_mask
