@@ -106,6 +106,33 @@ def main():
         args.checkpoint,
         map_location=device
     )
+    architecture = checkpoint.get(
+    "architecture",
+    "unet")
+
+    if architecture == "unet":
+        model = UNet(
+        in_channels=3,
+        out_channels=3
+    )
+
+    elif architecture == "no_skips":
+        model = UNetNoSkips(
+        in_channels=3,
+        out_channels=3
+    )
+
+    elif architecture == "aspp":
+        model = UNetASPP(
+        in_channels=3,
+        out_channels=3)
+
+    else:
+        raise ValueError(
+            f"Unknown architecture: "
+            f"{architecture}")
+
+    model = model.to(device)
 
     model.load_state_dict(
         checkpoint[
