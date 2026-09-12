@@ -8,8 +8,15 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.dataset import DSB2018Dataset, create_splits
-from src.model import UNet
-from src.losses import BoundaryCrossEntropyLoss, FocalLoss
+from src.model import (
+    UNet,
+    UNetNoSkips,
+    UNetASPP,
+)
+from src.losses import (
+    BoundaryCrossEntropyLoss,
+    FocalLoss,
+)
 
 
 DATA_ROOT = "data/raw"
@@ -17,15 +24,30 @@ DATA_ROOT = "data/raw"
 CHECKPOINT_DIR = Path("checkpoints")
 RESULTS_DIR = Path("experiments/results")
 
-BATCH_SIZE = 8
-LEARNING_RATE = 1e-3
+DEFAULT_BATCH_SIZE = 8
+DEFAULT_LEARNING_RATE = 1e-3
 
 TRAIN_RATIO = 0.8
 VAL_RATIO = 0.1
+
+# Fixed so every ablation uses exactly the same
+# train / validation / test partition.
 SPLIT_SEED = 42
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--architecture",
+        type=str,
+        default="unet",
+        choices=[
+            "unet",
+            "no_skips",
+            "aspp",
+        ],
+    )
 
     parser.add_argument(
         "--loss",
@@ -42,13 +64,14 @@ def parse_args():
         "--gamma",
         type=float,
         default=2.0,
-        help="Gamma for focal loss.",
+        help="Gamma used by focal loss.",
     )
 
     parser.add_argument(
         "--seed",
         type=int,
         default=42,
+        help="Training seed. Does NOT change the dataset split.",
     )
 
     parser.add_argument(
@@ -60,20 +83,20 @@ def parse_args():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=BATCH_SIZE,
+        default=DEFAULT_BATCH_SIZE,
     )
 
     parser.add_argument(
         "--lr",
         type=float,
-        default=LEARNING_RATE,
+        default=DEFAULT_LEARNING_RATE,
     )
 
     parser.add_argument(
         "--name",
         type=str,
         default="boundary_experiment",
-        help="Name used for checkpoint and CSV files.",
+        help="Name used for checkpoint and history files.",
     )
 
     return parser.parse_args()
@@ -88,16 +111,54 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-def build_loss(loss_name, gamma, device):
+def build_model(
+    architecture,
+    device,
+):
+    if architecture == "unet":
+        model = UNet(
+            in_channels=3,
+            out_channels=3,
+        )
+
+    elif architecture == "no_skips":
+        model = UNetNoSkips(
+            in_channels=3,
+            out_channels=3,
+        )
+
+    elif architecture == "aspp":
+        model = UNetASPP(
+            in_channels=3,
+            out_channels=3,
+        )
+
+    else:
+        raise ValueError(
+            f"Unknown architecture: {architecture}"
+        )
+
+    return model.to(device)
+
+
+def build_loss(
+    loss_name,
+    gamma,
+    device,
+):
     if loss_name == "ce":
         return BoundaryCrossEntropyLoss()
 
-    if loss_name == "balanced_ce":
+    elif loss_name == "balanced_ce":
+        # Hand-defined class weights:
+        # 0 = background
+        # 1 = interior
+        # 2 = boundary
         class_weights = torch.tensor(
             [
-                1.0,  # background
-                1.0,  # interior
-                2.0,  # boundary
+                1.0,
+                1.0,
+                2.0,
             ],
             dtype=torch.float32,
             device=device,
@@ -107,14 +168,15 @@ def build_loss(loss_name, gamma, device):
             class_weights=class_weights
         )
 
-    if loss_name == "focal":
+    elif loss_name == "focal":
         return FocalLoss(
             gamma=gamma
         )
 
-    raise ValueError(
-        f"Unknown loss: {loss_name}"
-    )
+    else:
+        raise ValueError(
+            f"Unknown loss: {loss_name}"
+        )
 
 
 def train_one_epoch(
@@ -149,6 +211,7 @@ def train_one_epoch(
         )
 
         loss.backward()
+
         optimizer.step()
 
         total_loss += loss.item()
@@ -193,6 +256,10 @@ def validate(
 def main():
     args = parse_args()
 
+    # --------------------------------------------------------
+    # Reproducibility
+    # --------------------------------------------------------
+
     set_seed(
         args.seed
     )
@@ -203,12 +270,24 @@ def main():
         else "cpu"
     )
 
+    # --------------------------------------------------------
+    # Print experiment configuration
+    # --------------------------------------------------------
+
+    print("=" * 60)
+    print("BOUNDARY TRAINING")
+    print("=" * 60)
+
     print(
         f"Device: {device}"
     )
 
     print(
         f"Experiment: {args.name}"
+    )
+
+    print(
+        f"Architecture: {args.architecture}"
     )
 
     print(
@@ -221,7 +300,11 @@ def main():
         )
 
     print(
-        f"Seed: {args.seed}"
+        f"Training seed: {args.seed}"
+    )
+
+    print(
+        f"Split seed: {SPLIT_SEED}"
     )
 
     print(
@@ -235,6 +318,8 @@ def main():
     print(
         f"Learning rate: {args.lr}"
     )
+
+    print()
 
     # --------------------------------------------------------
     # Dataset
@@ -261,8 +346,10 @@ def main():
         f"{len(val_dataset)}"
     )
 
+    print()
+
     # --------------------------------------------------------
-    # DataLoaders
+    # Data loaders
     # --------------------------------------------------------
 
     train_loader = DataLoader(
@@ -285,10 +372,10 @@ def main():
     # Model
     # --------------------------------------------------------
 
-    model = UNet(
-        in_channels=3,
-        out_channels=3,
-    ).to(device)
+    model = build_model(
+        args.architecture,
+        device,
+    )
 
     # --------------------------------------------------------
     # Loss
@@ -310,7 +397,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Output paths
+    # Output directories
     # --------------------------------------------------------
 
     CHECKPOINT_DIR.mkdir(
@@ -334,7 +421,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Initialize history CSV
+    # Initialize training history
     # --------------------------------------------------------
 
     with open(
@@ -355,12 +442,14 @@ def main():
         )
 
     # --------------------------------------------------------
-    # Training
+    # Training loop
     # --------------------------------------------------------
 
     best_val_loss = float(
         "inf"
     )
+
+    best_epoch = None
 
     for epoch in range(
         1,
@@ -390,9 +479,9 @@ def main():
             f"{val_loss:.4f}"
         )
 
-        # --------------------------------------------
-        # Save training history
-        # --------------------------------------------
+        # ----------------------------------------------------
+        # Save history
+        # ----------------------------------------------------
 
         with open(
             history_path,
@@ -411,33 +500,49 @@ def main():
                 ]
             )
 
-        # --------------------------------------------
+        # ----------------------------------------------------
         # Save best checkpoint
-        # --------------------------------------------
+        # ----------------------------------------------------
 
         if val_loss < best_val_loss:
-            best_val_loss = val_loss
+            best_val_loss = (
+                val_loss
+            )
+
+            best_epoch = epoch
 
             torch.save(
                 {
                     "model_state_dict":
                         model.state_dict(),
+
                     "epoch":
                         epoch,
+
                     "val_loss":
                         val_loss,
+
+                    "architecture":
+                        args.architecture,
+
                     "seed":
                         args.seed,
+
                     "split_seed":
                         SPLIT_SEED,
+
                     "loss":
                         args.loss,
+
                     "gamma":
                         args.gamma,
+
                     "learning_rate":
                         args.lr,
+
                     "batch_size":
                         args.batch_size,
+
                     "experiment_name":
                         args.name,
                 },
@@ -454,7 +559,6 @@ def main():
     # --------------------------------------------------------
 
     print()
-
     print(
         "=" * 60
     )
@@ -465,6 +569,11 @@ def main():
 
     print(
         "=" * 60
+    )
+
+    print(
+        f"Best epoch: "
+        f"{best_epoch}"
     )
 
     print(
