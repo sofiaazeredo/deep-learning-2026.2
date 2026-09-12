@@ -104,45 +104,66 @@ class DSB2018Dataset(Dataset):
         return instance_mask
 
     def __getitem__(self, index):
-
         sample = self.samples[index]
-
+    
         image = self._load_image(sample["image"])
-
-        height, width = image.shape[:2]
-
+    
+        h, w = image.shape[:2]
+    
         instance_mask = self._load_instance_mask(
             sample["masks"],
-            (height, width)
+            (h, w)
         )
-
-        # Optional augmentation.
-        #
-        # We will implement this properly later because
-        # image and instance masks must receive the same
-        # spatial transformations.
+    
+        # --------------------------------------------------------
+        # Padroniza tamanho
+        # --------------------------------------------------------
+    
+        target_size = (256, 256)
+    
+        image = Image.fromarray(image).resize(
+            target_size,
+            Image.Resampling.BILINEAR
+        )
+    
+        instance_mask = Image.fromarray(instance_mask).resize(
+            target_size,
+            Image.Resampling.NEAREST
+        )
+    
+        image = np.array(image)
+        instance_mask = np.array(instance_mask)
+    
+        # --------------------------------------------------------
+        # Transformações opcionais
+        # --------------------------------------------------------
+    
         if self.transform is not None:
+    
             transformed = self.transform(
                 image=image,
                 mask=instance_mask
             )
-
+    
             image = transformed["image"]
             instance_mask = transformed["mask"]
-
-        # HWC -> CHW
+    
+        # --------------------------------------------------------
+        # Tensor
+        # --------------------------------------------------------
+    
         image = torch.from_numpy(
             image.copy()
         ).float() / 255.0
-
+    
         image = image.permute(2, 0, 1)
-
+    
         instance_mask = torch.from_numpy(
             instance_mask.copy()
         ).long()
-
+    
         return {
             "image": image,
             "instance_mask": instance_mask,
-            "image_path": str(sample["image"]),
+            "image_path": str(sample["image"])
         }
