@@ -77,39 +77,17 @@ def semantic_prediction_to_instances(
 
 def boundary_prediction_to_instances(
     prediction,
-    interior_class=1,
-    boundary_class=2,
+    interior_threshold=0.5,
+    foreground_threshold=0.5,
     min_size=5
 ):
     """
-    Converte logits/probabilidades de 3 classes em instâncias
-    usando interior + boundary + watershed.
+    prediction: probabilities [3, H, W]
 
-    Classes esperadas:
+    classes:
         0 = background
         1 = interior
         2 = boundary
-
-    Parameters
-    ----------
-    prediction : torch.Tensor or np.ndarray
-        Tensor [3, H, W] contendo logits ou probabilidades.
-
-    interior_class : int
-        Índice da classe de interior.
-
-    boundary_class : int
-        Índice da classe de boundary.
-
-    min_size : int
-        Remove marcadores muito pequenos.
-
-    Returns
-    -------
-    instance_mask : np.ndarray
-        Máscara [H, W]:
-        0 = background
-        1..N = instâncias.
     """
 
     if isinstance(prediction, torch.Tensor):
@@ -119,37 +97,33 @@ def boundary_prediction_to_instances(
 
     if prediction.ndim != 3:
         raise ValueError(
-            f"Expected [C, H, W], got {prediction.shape}"
+            f"Expected [3, H, W], got {prediction.shape}"
         )
 
-    # --------------------------------------------------------
-    # Classe predita por pixel
-    # --------------------------------------------------------
+    # probabilities
+    background_prob = prediction[0]
+    interior_prob = prediction[1]
 
-    class_mask = np.argmax(
-        prediction,
-        axis=0
+    # foreground = anything that is not background
+    foreground_prob = 1.0 - background_prob
+
+    foreground = (
+        foreground_prob >= foreground_threshold
     )
 
+    # markers for watershed
     interior = (
-        class_mask == interior_class
+        interior_prob >= interior_threshold
     )
 
-    boundary = (
-        class_mask == boundary_class
-    )
+    interior &= foreground
 
-    # Tudo que não é background é considerado foreground
-    foreground = interior | boundary
-
-    # --------------------------------------------------------
-    # Remove componentes minúsculos do interior
-    # --------------------------------------------------------
-
+    # connected components of seeds
     markers, num_markers = ndimage.label(
         interior
     )
 
+    # remove tiny markers
     if min_size > 0:
 
         sizes = ndimage.sum(
@@ -158,7 +132,7 @@ def boundary_prediction_to_instances(
             range(1, num_markers + 1)
         )
 
-        cleaned_interior = np.zeros_like(
+        clean = np.zeros_like(
             interior,
             dtype=bool
         )
@@ -168,25 +142,17 @@ def boundary_prediction_to_instances(
             start=1
         ):
             if size >= min_size:
-                cleaned_interior[
+                clean[
                     markers == marker_id
                 ] = True
 
         markers, _ = ndimage.label(
-            cleaned_interior
+            clean
         )
-
-    # --------------------------------------------------------
-    # Distance transform
-    # --------------------------------------------------------
 
     distance = ndimage.distance_transform_edt(
         foreground
     )
-
-    # --------------------------------------------------------
-    # Watershed
-    # --------------------------------------------------------
 
     instances = watershed(
         -distance,
