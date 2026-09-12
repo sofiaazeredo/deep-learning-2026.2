@@ -1,3 +1,4 @@
+import csv
 import random
 from pathlib import Path
 
@@ -16,9 +17,10 @@ from src.losses import CrossEntropyLoss
 
 DATA_ROOT = "data/raw"
 CHECKPOINT_DIR = Path("checkpoints")
+RESULTS_DIR = Path("experiments/results")
 
-BATCH_SIZE = 8
-NUM_EPOCHS = 20
+BATCH_SIZE = 1
+NUM_EPOCHS = 1
 LEARNING_RATE = 1e-3
 
 TRAIN_RATIO = 0.8
@@ -148,16 +150,16 @@ def main():
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=2,
-        pin_memory=torch.cuda.is_available()
+        num_workers=0,
+        pin_memory=False
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=2,
-        pin_memory=torch.cuda.is_available()
+        num_workers=0,
+        pin_memory=False
     )
 
     # --------------------------------------------------------
@@ -177,7 +179,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Checkpoint directory
+    # Diretórios
     # --------------------------------------------------------
 
     CHECKPOINT_DIR.mkdir(
@@ -185,11 +187,32 @@ def main():
         exist_ok=True
     )
 
-    best_val_loss = float("inf")
+    RESULTS_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    # --------------------------------------------------------
+    # Arquivo de histórico
+    # --------------------------------------------------------
+
+    history_path = RESULTS_DIR / "training_history.csv"
+
+    with open(history_path, "w", newline="") as file:
+
+        writer = csv.writer(file)
+
+        writer.writerow([
+            "epoch",
+            "train_loss",
+            "val_loss"
+        ])
 
     # --------------------------------------------------------
     # Training loop
     # --------------------------------------------------------
+
+    best_val_loss = float("inf")
 
     for epoch in range(1, NUM_EPOCHS + 1):
 
@@ -214,12 +237,31 @@ def main():
             f"val_loss={val_loss:.4f}"
         )
 
-        # Save best model
+        # ----------------------------------------------------
+        # Salva histórico
+        # ----------------------------------------------------
+
+        with open(history_path, "a", newline="") as file:
+
+            writer = csv.writer(file)
+
+            writer.writerow([
+                epoch,
+                train_loss,
+                val_loss
+            ])
+
+        # ----------------------------------------------------
+        # Salva melhor checkpoint
+        # ----------------------------------------------------
+
         if val_loss < best_val_loss:
 
             best_val_loss = val_loss
 
-            checkpoint_path = CHECKPOINT_DIR / "baseline_best.pt"
+            checkpoint_path = (
+                CHECKPOINT_DIR / "baseline_best.pt"
+            )
 
             torch.save(
                 {
@@ -234,6 +276,10 @@ def main():
             print(
                 f"  -> saved {checkpoint_path}"
             )
+
+    print()
+    print(f"Training history: {history_path}")
+    print(f"Best checkpoint: {CHECKPOINT_DIR / 'baseline_best.pt'}")
 
 
 if __name__ == "__main__":
