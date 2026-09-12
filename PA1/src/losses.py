@@ -46,3 +46,28 @@ class BoundaryCrossEntropyLoss(nn.Module):
             prediction,
             boundary_target
         )
+
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2.0, weight=None):
+        super().__init__()
+
+        self.gamma = gamma
+        self.ce = nn.CrossEntropyLoss(
+            weight=weight,
+            reduction="none"
+        )
+
+    def forward(self, prediction, target):
+
+        ce = self.ce(
+            prediction,
+            target
+        )
+
+        pt = torch.exp(-ce)
+
+        loss = (
+            (1 - pt) ** self.gamma
+        ) * ce
+
+        return loss.mean()
