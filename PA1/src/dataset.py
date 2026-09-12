@@ -1,5 +1,5 @@
 from pathlib import Path
-
+from scipy import ndimage
 import numpy as np
 from PIL import Image
 import torch
@@ -102,6 +102,48 @@ class DSB2018Dataset(Dataset):
             instance_mask[mask] = instance_id
 
         return instance_mask
+    
+    def _create_boundary_target(self, instance_mask, boundary_width=2):
+        """
+        Converte uma máscara de instâncias em um target de 3 classes:
+    
+            0 = background
+            1 = interior
+            2 = boundary
+    
+        A boundary é construída dentro de cada instância através
+        de erosão morfológica.
+        """
+    
+        target = np.zeros_like(
+            instance_mask,
+            dtype=np.int64
+        )
+    
+        instance_ids = np.unique(instance_mask)
+        instance_ids = instance_ids[instance_ids != 0]
+    
+        for instance_id in instance_ids:
+    
+            mask = instance_mask == instance_id
+    
+            # Erode o objeto
+            eroded = ndimage.binary_erosion(
+                mask,
+                iterations=boundary_width,
+                border_value=0
+            )
+    
+            # Pixels removidos pela erosão = boundary
+            boundary = mask & ~eroded
+    
+            # Interior
+            target[eroded] = 1
+    
+            # Boundary
+            target[boundary] = 2
+    
+        return target
 
     def __getitem__(self, index):
         sample = self.samples[index]
@@ -130,9 +172,15 @@ class DSB2018Dataset(Dataset):
             target_size,
             Image.Resampling.NEAREST
         )
+        
     
         image = np.array(image)
         instance_mask = np.array(instance_mask)
+        
+        boundary_target = self._create_boundary_target(
+        instance_mask,
+        boundary_width=2
+)
     
         # --------------------------------------------------------
         # Transformações opcionais
@@ -165,6 +213,9 @@ class DSB2018Dataset(Dataset):
         return {
             "image": image,
             "instance_mask": instance_mask,
+            "boundary_target": torch.from_numpy(
+                boundary_target.copy()
+            ).long(),
             "image_path": str(sample["image"])
         }
     
