@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, random_split
 
-from src.dataset import DSB2018Dataset
+from src.dataset import DSB2018Dataset, create_splits
 from src.model import UNet
 from src.losses import CrossEntropyLoss
 
@@ -124,19 +124,12 @@ def main():
     # Train / validation / test split
     # --------------------------------------------------------
 
-    n_total = len(dataset)
-
-    n_train = int(TRAIN_RATIO * n_total)
-    n_val = int(VAL_RATIO * n_total)
-    n_test = n_total - n_train - n_val
-
-    generator = torch.Generator().manual_seed(SEED)
-
-    train_dataset, val_dataset, test_dataset = random_split(
-        dataset,
-        [n_train, n_val, n_test],
-        generator=generator
-    )
+    train_dataset, val_dataset, test_dataset = create_splits(
+                                                        dataset,
+                                                        seed=SEED,
+                                                        train_ratio=TRAIN_RATIO,
+                                                        val_ratio=VAL_RATIO
+                                                        )
 
     print(f"Train: {len(train_dataset)}")
     print(f"Validation: {len(val_dataset)}")

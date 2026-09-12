@@ -167,3 +167,20 @@ class DSB2018Dataset(Dataset):
             "instance_mask": instance_mask,
             "image_path": str(sample["image"])
         }
+    
+def create_splits(dataset, seed=42, train_ratio=0.8, val_ratio=0.1):
+    from torch.utils.data import random_split
+
+    n_total = len(dataset)
+
+    n_train = int(train_ratio * n_total)
+    n_val = int(val_ratio * n_total)
+    n_test = n_total - n_train - n_val
+
+    generator = torch.Generator().manual_seed(seed)
+
+    return random_split(
+        dataset,
+        [n_train, n_val, n_test],
+        generator=generator
+    )
