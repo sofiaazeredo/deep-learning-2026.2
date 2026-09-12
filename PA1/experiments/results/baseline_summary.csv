@@ -1,0 +1,2 @@
+semantic_iou,semantic_dice,map_50_95,mean_count_error,count_bias,density_map_corr,density_count_error_corr
+0.8281029683,0.8969582768,0.4379527042,13.1044776119,-12.5074626866,-0.2166801581,0.8648240755
