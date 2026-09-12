@@ -19,8 +19,8 @@ DATA_ROOT = "data/raw"
 CHECKPOINT_DIR = Path("checkpoints")
 RESULTS_DIR = Path("experiments/results")
 
-BATCH_SIZE = 1
-NUM_EPOCHS = 1
+BATCH_SIZE = 8
+NUM_EPOCHS = 20
 LEARNING_RATE = 1e-3
 
 TRAIN_RATIO = 0.8
@@ -150,7 +150,7 @@ def main():
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=0,
+        num_workers=2,
         pin_memory=False
     )
 
@@ -158,7 +158,7 @@ def main():
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=0,
+        num_workers=2,
         pin_memory=False
     )
 
