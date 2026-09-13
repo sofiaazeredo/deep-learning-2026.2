@@ -502,15 +502,33 @@ def build_architecture(
     )
 
 
+def infer_out_channels(state_dict, default=3):
+    """
+    Descobre quantos canais de saída o checkpoint tem, olhando a última
+    convolução (1x1). UNet chama de "output", as outras de "final".
+
+    Serve para carregar tanto o baseline binário (2 canais) quanto o
+    modelo de fronteira (3 canais) sem precisar saber de antemão.
+    """
+
+    for key in ("output.weight", "final.weight"):
+        if key in state_dict:
+            return int(state_dict[key].shape[0])
+
+    return default
+
+
 def load_model_from_checkpoint(
     checkpoint_path,
     device,
     in_channels=3,
-    out_channels=3,
+    out_channels=None,
 ):
     """
     Rebuild the correct architecture from a checkpoint and load its
     weights, already moved to `device` and in eval mode.
+
+    out_channels=None descobre o número de canais a partir dos pesos.
 
     Returns
     -------
@@ -526,6 +544,11 @@ def load_model_from_checkpoint(
         "architecture",
         "unet",
     )
+
+    if out_channels is None:
+        out_channels = infer_out_channels(
+            checkpoint["model_state_dict"]
+        )
 
     model = build_architecture(
         architecture,
