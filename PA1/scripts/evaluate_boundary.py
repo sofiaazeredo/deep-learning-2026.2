@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+# Rodar "python scripts/x.py" coloca scripts/ no sys.path, não a raiz do
+# projeto, então "import src" falha. Isso resolve sem exigir PYTHONPATH.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import csv
 from pathlib import Path
 import argparse
@@ -9,10 +16,9 @@ from src.dataset import (
     DSB2018Dataset,
     create_splits
 )
-from src.model import UNet
+from src.model import load_model_from_checkpoint
 from src.metrics import (
-    instance_precision,
-    instance_map,
+    instance_scores,
     counting_error,
     IOU_THRESHOLDS,
 )
@@ -97,50 +103,21 @@ def main():
     # Model
     # --------------------------------------------------------
 
-    model = UNet(
-        in_channels=3,
-        out_channels=3
-    ).to(device)
-
-    checkpoint = torch.load(
+    model, checkpoint = load_model_from_checkpoint(
         args.checkpoint,
-        map_location=device
+        device,
+        in_channels=3,
+        out_channels=3
     )
+
     architecture = checkpoint.get(
-    "architecture",
-    "unet")
-
-    if architecture == "unet":
-        model = UNet(
-        in_channels=3,
-        out_channels=3
+        "architecture",
+        "unet"
     )
 
-    elif architecture == "no_skips":
-        model = UNetNoSkips(
-        in_channels=3,
-        out_channels=3
+    print(
+        f"Architecture: {architecture}"
     )
-
-    elif architecture == "aspp":
-        model = UNetASPP(
-        in_channels=3,
-        out_channels=3)
-
-    else:
-        raise ValueError(
-            f"Unknown architecture: "
-            f"{architecture}")
-
-    model = model.to(device)
-
-    model.load_state_dict(
-        checkpoint[
-            "model_state_dict"
-        ]
-    )
-
-    model.eval()
 
     print(
         f"Checkpoint epoch: "
@@ -221,7 +198,9 @@ def main():
             # Instance metrics
             # ----------------------------------------
 
-            image_map = instance_map(
+            # Uma única matriz de IoU por imagem, reaproveitada em
+            # todos os limiares (antes: 20 matrizes por imagem).
+            image_map, ap_by_threshold = instance_scores(
                 true_np,
                 pred_instances
             )
@@ -243,11 +222,9 @@ def main():
 
             for threshold in IOU_THRESHOLDS:
 
-                score = instance_precision(
-                    true_np,
-                    pred_instances,
-                    threshold
-                )
+                score = ap_by_threshold[
+                    float(threshold)
+                ]
 
                 threshold_scores[
                     float(threshold)
@@ -279,6 +256,8 @@ def main():
                 "image_index": idx,
                 "image_path":
                     batch["image_path"][0],
+                "architecture":
+                    architecture,
                 "true_count":
                     true_count,
                 "pred_count":

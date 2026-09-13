@@ -462,3 +462,82 @@ class UNetASPP(nn.Module):
         x = self.dec1(x)
 
         return self.final(x)
+
+
+# ------------------------------------------------------------------
+# Architecture registry and checkpoint loading
+# ------------------------------------------------------------------
+#
+# Every script that needs a trained model goes through
+# load_model_from_checkpoint, so the architecture is always rebuilt
+# from what the checkpoint itself recorded. That keeps the ablation
+# honest: there is no place left where a checkpoint can be loaded
+# into the wrong decoder.
+
+ARCHITECTURES = {
+    "unet": UNet,
+    "no_skips": UNetNoSkips,
+    "aspp": UNetASPP,
+}
+
+
+def build_architecture(
+    architecture,
+    in_channels=3,
+    out_channels=3,
+):
+    """
+    Instantiate one of the ablation architectures by name.
+    """
+
+    if architecture not in ARCHITECTURES:
+        raise ValueError(
+            f"Unknown architecture: {architecture!r}. "
+            f"Available: {sorted(ARCHITECTURES)}"
+        )
+
+    return ARCHITECTURES[architecture](
+        in_channels=in_channels,
+        out_channels=out_channels,
+    )
+
+
+def load_model_from_checkpoint(
+    checkpoint_path,
+    device,
+    in_channels=3,
+    out_channels=3,
+):
+    """
+    Rebuild the correct architecture from a checkpoint and load its
+    weights, already moved to `device` and in eval mode.
+
+    Returns
+    -------
+    model, checkpoint
+    """
+
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+    )
+
+    architecture = checkpoint.get(
+        "architecture",
+        "unet",
+    )
+
+    model = build_architecture(
+        architecture,
+        in_channels=in_channels,
+        out_channels=out_channels,
+    )
+
+    model.load_state_dict(
+        checkpoint["model_state_dict"]
+    )
+
+    model = model.to(device)
+    model.eval()
+
+    return model, checkpoint
