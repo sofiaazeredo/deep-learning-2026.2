@@ -14,7 +14,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from src.dataset import DSB2018Dataset, create_splits
+from src.dataset import DSB2018Dataset, create_splits, split_report
 from src.model import (
     UNet,
     UNetNoSkips,
@@ -347,12 +347,18 @@ def main():
         adaptive_boundary=args.adaptive_boundary,
     )
 
-    train_dataset, val_dataset, _ = create_splits(
+    splits = create_splits(
         dataset,
         seed=SPLIT_SEED,
         train_ratio=TRAIN_RATIO,
         val_ratio=VAL_RATIO,
     )
+
+    train_dataset, val_dataset, _ = splits
+
+    print("Distribuicao de modalidade por split (split estratificado):")
+    split_report(dataset, splits)
+    print()
 
     print(
         f"Train samples: "

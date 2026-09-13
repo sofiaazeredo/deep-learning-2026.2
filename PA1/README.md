@@ -229,10 +229,20 @@ AI_LOG.md             uso de IA neste trabalho
   AP = TP / (TP + FP + FN) por limiar, de 0,50 a 0,95 em passos de 0,05. A matriz
   de IoU sai de um `np.bincount` sobre os pares de rótulos, e não de um laço por
   par de máscaras — o resultado é idêntico e viabiliza a escala do mosaico.
-- **Split.** `create_splits` usa `random_split` com seed fixa. **Não é
-  estratificado por modalidade**, que é o que o PDF pede; as consequências
-  aparecem na Parte 5 (o mAP por imagem correlaciona −0,61 com o brilho, isto é,
-  o modelo vai mal justamente nas modalidades claras, minoritárias no treino).
+- **Split.** `create_splits` é **estratificado por modalidade**, como o enunciado
+  exige. O DSB2018 não traz rótulo de modalidade, então derivamos um de duas
+  estatísticas da imagem: separação média de canais (`max−min` entre RGB) e
+  brilho médio. Os cortes caem em vazios do histograma, não no meio de nada — a
+  separação de canais é exatamente 0,0 em 562 das 670 imagens e ≥ 30 nas outras
+  108; entre as acinzentadas o brilho é ≤ 57 ou ≥ 205. Um KMeans(k=4)
+  independente reencontra os mesmos três grupos: `fluor_escura` (546),
+  `histologia_colorida` (108) e `brightfield_clara` (16). `split_report` imprime
+  a distribuição por split. `stratify=False` reproduz o `random_split` anterior.
+- **Sobre o brilho.** O mAP por imagem correlaciona ≈ −0,61 com o brilho. Isso
+  **não** se explica por falta de imagens claras no treino: elas são ~18% do
+  treino nos dois splits (o sorteio aleatório já tinha caído balanceado, o que
+  medimos). As modalidades claras são simplesmente mais difíceis — a pior imagem
+  do teste é citologia em campo claro com núcleos de 4,4 px.
 - **Resolução.** Todas as imagens são redimensionadas para 256×256 em
   `__getitem__`, inclusive as de 1024×1024 e 1040×1388. As métricas são medidas
   nessa resolução, não na original.

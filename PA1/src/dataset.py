@@ -1,9 +1,10 @@
+import csv
 from pathlib import Path
 from scipy import ndimage
 import numpy as np
 from PIL import Image
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset, random_split
 
 
 def create_boundary_target(
@@ -263,19 +264,238 @@ class DSB2018Dataset(Dataset):
             "image_path": str(sample["image"])
         }
     
-def create_splits(dataset, seed=42, train_ratio=0.8, val_ratio=0.1):
-    from torch.utils.data import random_split
+# ----------------------------------------------------------------------
+# Split estratificado por modalidade
+# ----------------------------------------------------------------------
+#
+# O enunciado exige "split treino/validacao/teste estratificado por
+# modalidade ou cidade, justificado na apresentacao". O DSB2018 nao traz
+# rotulo de modalidade, entao derivamos um a partir de duas estatisticas
+# da propria imagem:
+#
+#   separacao de canais = media de (max - min) entre os canais RGB
+#   brilho              = media dos canais
+#
+# Os cortes caem em vazios grandes do histograma, e nao no meio de nada:
+# a separacao de canais e EXATAMENTE 0.0 em 562 das 670 imagens e >= 30
+# nas outras 108; entre as acinzentadas, o brilho e <= 57 (fluorescencia)
+# ou >= 205 (campo claro), sem nada no meio. Um KMeans(k=4) independente
+# sobre as duas features reencontra os mesmos tres grupos.
+
+CHANNEL_SEPARATION_THRESHOLD = 5.0
+BRIGHTNESS_THRESHOLD = 100.0
+
+MODALITIES = ("fluor_escura", "brightfield_clara", "histologia_colorida")
+
+MODALITY_CACHE = Path("experiments/results/modalidades.csv")
+
+
+def image_statistics(image_path):
+    """
+    (brilho medio, separacao media de canais) de uma imagem.
+    """
+
+    image = np.array(
+        Image.open(image_path).convert("RGB"),
+        dtype=np.float32,
+    )
+
+    brightness = float(image.mean())
+
+    separation = float(
+        (image.max(axis=2) - image.min(axis=2)).mean()
+    )
+
+    return brightness, separation
+
+
+def classify_modality(brightness, separation):
+    """
+    Rotulo de modalidade a partir das duas estatisticas.
+    """
+
+    if separation >= CHANNEL_SEPARATION_THRESHOLD:
+        return "histologia_colorida"
+
+    if brightness < BRIGHTNESS_THRESHOLD:
+        return "fluor_escura"
+
+    return "brightfield_clara"
+
+
+def dataset_modalities(dataset, cache_path=MODALITY_CACHE):
+    """
+    Modalidade de cada amostra do dataset, na ordem dos indices.
+
+    Le as 670 imagens uma vez e guarda em CSV; as chamadas seguintes
+    (todo script chama create_splits) saem do cache.
+    """
+
+    paths = [str(sample["image"]) for sample in dataset.samples]
+
+    if cache_path is not None and Path(cache_path).exists():
+
+        cached = {}
+
+        with open(cache_path) as file:
+            for row in csv.DictReader(file):
+                cached[row["image_path"]] = row["modality"]
+
+        if all(path in cached for path in paths):
+            return [cached[path] for path in paths]
+
+    modalities = []
+    rows = []
+
+    for path in paths:
+
+        brightness, separation = image_statistics(path)
+
+        modality = classify_modality(brightness, separation)
+
+        modalities.append(modality)
+
+        rows.append({
+            "image_path": path,
+            "brightness": round(brightness, 2),
+            "channel_separation": round(separation, 2),
+            "modality": modality,
+        })
+
+    if cache_path is not None:
+
+        Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+
+        with open(cache_path, "w", newline="") as file:
+
+            writer = csv.DictWriter(
+                file,
+                fieldnames=[
+                    "image_path", "brightness",
+                    "channel_separation", "modality",
+                ],
+            )
+
+            writer.writeheader()
+            writer.writerows(rows)
+
+    return modalities
+
+
+def create_splits(
+    dataset,
+    seed=42,
+    train_ratio=0.8,
+    val_ratio=0.1,
+    stratify=True,
+):
+    """
+    Divide o dataset em treino / validacao / teste.
+
+    stratify=True (padrao) preserva a proporcao de cada modalidade nos
+    tres splits, como o enunciado exige. stratify=False reproduz o
+    random_split antigo, para comparacao.
+
+    Devolve tres Subset, iguais ao que random_split devolvia.
+    """
 
     n_total = len(dataset)
 
-    n_train = int(train_ratio * n_total)
-    n_val = int(val_ratio * n_total)
-    n_test = n_total - n_train - n_val
+    if not stratify:
 
-    generator = torch.Generator().manual_seed(seed)
+        n_train = int(train_ratio * n_total)
+        n_val = int(val_ratio * n_total)
+        n_test = n_total - n_train - n_val
 
-    return random_split(
-        dataset,
-        [n_train, n_val, n_test],
-        generator=generator
+        generator = torch.Generator().manual_seed(seed)
+
+        return random_split(
+            dataset,
+            [n_train, n_val, n_test],
+            generator=generator,
+        )
+
+    modalities = dataset_modalities(dataset)
+
+    rng = np.random.default_rng(seed)
+
+    train_indices = []
+    val_indices = []
+    test_indices = []
+
+    for modality in sorted(set(modalities)):
+
+        indices = np.array(
+            [i for i, m in enumerate(modalities) if m == modality]
+        )
+
+        rng.shuffle(indices)
+
+        n_group = len(indices)
+
+        n_train = int(round(train_ratio * n_group))
+        n_val = int(round(val_ratio * n_group))
+
+        # Grupos pequenos (brightfield_clara tem 16 imagens) nao podem
+        # ficar sem representacao em validacao e teste — e exatamente o
+        # que a estratificacao existe para evitar.
+        if n_group >= 3:
+            n_val = max(n_val, 1)
+            n_train = min(n_train, n_group - 2)
+
+        n_train = max(n_train, 0)
+
+        train_indices.extend(indices[:n_train].tolist())
+        val_indices.extend(indices[n_train:n_train + n_val].tolist())
+        test_indices.extend(indices[n_train + n_val:].tolist())
+
+    # Ordena para o conjunto de teste ter ordem estavel entre execucoes.
+    train_indices.sort()
+    val_indices.sort()
+    test_indices.sort()
+
+    return (
+        Subset(dataset, train_indices),
+        Subset(dataset, val_indices),
+        Subset(dataset, test_indices),
+    )
+
+
+def split_report(dataset, splits, printer=print):
+    """
+    Tabela de distribuicao de modalidade por split — a justificativa que
+    a apresentacao precisa mostrar.
+    """
+
+    modalities = dataset_modalities(dataset)
+
+    names = ("treino", "validacao", "teste")
+
+    printer(f"{'modalidade':<22}{'treino':>9}{'validacao':>11}{'teste':>8}{'total':>8}")
+
+    totals = {name: 0 for name in names}
+
+    for modality in MODALITIES:
+
+        counts = []
+
+        for split in splits:
+            counts.append(
+                sum(1 for i in split.indices if modalities[i] == modality)
+            )
+
+        if sum(counts) == 0:
+            continue
+
+        for name, count in zip(names, counts):
+            totals[name] += count
+
+        printer(
+            f"{modality:<22}{counts[0]:>9}{counts[1]:>11}{counts[2]:>8}"
+            f"{sum(counts):>8}"
+        )
+
+    printer(
+        f"{'TOTAL':<22}{totals['treino']:>9}{totals['validacao']:>11}"
+        f"{totals['teste']:>8}{sum(totals.values()):>8}"
     )

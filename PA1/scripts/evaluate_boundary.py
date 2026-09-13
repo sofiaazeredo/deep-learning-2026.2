@@ -14,7 +14,8 @@ from torch.utils.data import DataLoader
 
 from src.dataset import (
     DSB2018Dataset,
-    create_splits
+    create_splits,
+    split_report
 )
 from src.model import load_model_from_checkpoint
 from src.metrics import (
@@ -81,16 +82,25 @@ def main():
         DATA_ROOT
     )
 
-    _, _, test_dataset = create_splits(
+    splits = create_splits(
         dataset,
         seed=SPLIT_SEED,
         train_ratio=0.8,
         val_ratio=0.1
     )
 
+    test_dataset = splits[2]
+
     print(
         f"Test samples: {len(test_dataset)}"
     )
+
+    print()
+    print("Distribuicao de modalidade por split (split estratificado):")
+    split_report(dataset, splits)
+    print()
+
+
 
     test_loader = DataLoader(
         test_dataset,
