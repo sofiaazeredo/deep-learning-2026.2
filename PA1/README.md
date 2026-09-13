@@ -173,11 +173,21 @@ e resolvem o checkpoint sozinhos; `--checkpoint` força outro.
 ## Checkpoint
 
 O modelo final (`loss_balanced_seed123_best.pt`, 119 MB) não cabe no limite de
-arquivo do GitHub e está aqui:
+arquivo do GitHub (100 MB) e está no Drive:
 
-**<COLAR O LINK DO DRIVE AQUI>**
+**<https://drive.google.com/file/d/1hGduuxS3UxYHJO1JFrt9-T4lfA6TfsfC/view?usp=drive_link>**
 
-Baixe para `checkpoints/` antes de rodar as Partes 4 a 7.
+Baixe para `PA1/checkpoints/` antes de rodar as Partes 4 a 7:
+
+```bash
+mkdir -p checkpoints
+# baixe o arquivo do link acima para checkpoints/loss_balanced_seed123_best.pt
+python scripts/mosaic_inference.py --grid 3 --name mosaic   # já encontra o checkpoint sozinho
+```
+
+É a U-Net com skip connections treinada com Weighted CE, seed 123 — a
+configuração vencedora do Eixo 1 e do Eixo 2. Todas as figuras das Partes 4, 5
+e 6 saem dele.
 
 ---
 
