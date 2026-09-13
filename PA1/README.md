@@ -14,10 +14,18 @@ máscara PNG por núcleo.
 
 | Parte | Modelo | mAP@0,50:0,95 | Erro de contagem |
 |---|---|---|---|
+| 0 — teste unitário sintético | U-Net reduzida, 3 classes | 0,525 | 1,42 |
 | 1 — baseline semântico + componentes conexos | U-Net, 2 classes | 0,438 | 13,10 |
 | 2 — fronteira + watershed (Trilha A) | U-Net, 3 classes | 0,489 | 12,24 |
 
 Modelo final (`loss_balanced_seed123`) no teste: **mAP 0,4935**, erro de contagem 12,03.
+
+**Parte 0 — teste unitário sintético**: 256 imagens 128×128 com 5 a 20 elipses
+(13,2 por imagem em média, 84,3% encostando em algum vizinho), ruído e contraste
+variáveis. Treina em **188 s (3,1 min)**, dentro do limite de 5 minutos do
+enunciado, e atinge mAP 0,525. Usa o mesmo encoder-decoder, a mesma perda, a
+mesma decodificação por watershed e a mesma métrica dos dados reais — se alguma
+peça do pipeline quebrar, quebra aqui em minutos.
 
 **Parte 3, Eixo 1 — como recuperar resolução** (média ± desvio, 2 seeds, mesma
 perda e mesmo split):
@@ -130,6 +138,9 @@ O split é fixo (`SPLIT_SEED = 42`) e independente da seed de treino, então tod
 as execuções compartilham exatamente o mesmo conjunto de teste.
 
 ```bash
+# Parte 0 — teste unitário sintético (não precisa dos dados reais)
+python scripts/train_synthetic.py
+
 # Parte 1 — baseline semântico + instâncias ingênuas
 python scripts/train.py
 python scripts/evaluate.py
@@ -202,6 +213,7 @@ src/
   postprocessing.py   limiar+componentes conexos, fronteira+watershed
   mosaic.py           tiles sobrepostos e fusão de instâncias entre tiles
   inference.py        imagem qualquer -> máscara colorida + contagem
+  synthetic.py        gerador de elipses sintéticas (Parte 0)
 scripts/              um script por etapa (ver acima)
 experiments/
   results/            um CSV por execução + os sumários das ablações

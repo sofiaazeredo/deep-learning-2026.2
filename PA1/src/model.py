@@ -48,44 +48,54 @@ class UNet(nn.Module):
         Number of output classes/maps.
     """
 
-    def __init__(self, in_channels=3, out_channels=2):
+    def __init__(self, in_channels=3, out_channels=2, base_channels=64):
         super().__init__()
 
+        # base_channels=64 e a rede do trabalho; valores menores servem
+        # para o teste unitario sintetico da Parte 0, que precisa treinar
+        # em menos de 5 minutos. O default mantem os checkpoints
+        # existentes carregando sem mudanca.
+        c1 = base_channels
+        c2 = c1 * 2
+        c3 = c1 * 4
+        c4 = c1 * 8
+        c5 = c1 * 16
+
         # Encoder
-        self.enc1 = DoubleConv(in_channels, 64)
-        self.enc2 = DoubleConv(64, 128)
-        self.enc3 = DoubleConv(128, 256)
-        self.enc4 = DoubleConv(256, 512)
+        self.enc1 = DoubleConv(in_channels, c1)
+        self.enc2 = DoubleConv(c1, c2)
+        self.enc3 = DoubleConv(c2, c3)
+        self.enc4 = DoubleConv(c3, c4)
 
         self.pool = nn.MaxPool2d(kernel_size=2)
 
         # Bottleneck
-        self.bottleneck = DoubleConv(512, 1024)
+        self.bottleneck = DoubleConv(c4, c5)
 
         # Decoder
         self.up4 = nn.ConvTranspose2d(
-            1024, 512, kernel_size=2, stride=2
+            c5, c4, kernel_size=2, stride=2
         )
-        self.dec4 = DoubleConv(1024, 512)
+        self.dec4 = DoubleConv(c5, c4)
 
         self.up3 = nn.ConvTranspose2d(
-            512, 256, kernel_size=2, stride=2
+            c4, c3, kernel_size=2, stride=2
         )
-        self.dec3 = DoubleConv(512, 256)
+        self.dec3 = DoubleConv(c4, c3)
 
         self.up2 = nn.ConvTranspose2d(
-            256, 128, kernel_size=2, stride=2
+            c3, c2, kernel_size=2, stride=2
         )
-        self.dec2 = DoubleConv(256, 128)
+        self.dec2 = DoubleConv(c3, c2)
 
         self.up1 = nn.ConvTranspose2d(
-            128, 64, kernel_size=2, stride=2
+            c2, c1, kernel_size=2, stride=2
         )
-        self.dec1 = DoubleConv(128, 64)
+        self.dec1 = DoubleConv(c2, c1)
 
         # Final prediction
         self.output = nn.Conv2d(
-            64,
+            c1,
             out_channels,
             kernel_size=1,
         )

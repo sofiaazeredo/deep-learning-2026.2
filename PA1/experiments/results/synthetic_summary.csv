@@ -1,0 +1,9 @@
+metric,value
+training_time_s,187.8
+map_50_95,0.5254423553754859
+count_abs_error,1.421875
+n_train,256
+n_val,64
+epochs,32
+base_channels,16
+params_millions,1.94

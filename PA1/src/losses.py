@@ -32,10 +32,13 @@ class BoundaryCrossEntropyLoss(nn.Module):
         super().__init__()
 
         if class_weights is not None:
-            class_weights = torch.tensor(
-                class_weights,
-                dtype=torch.float32
-            )
+            if isinstance(class_weights, torch.Tensor):
+                class_weights = class_weights.detach().clone().float()
+            else:
+                class_weights = torch.tensor(
+                    class_weights,
+                    dtype=torch.float32
+                )
 
         self.loss = nn.CrossEntropyLoss(
             weight=class_weights

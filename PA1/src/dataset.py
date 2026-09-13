@@ -6,6 +6,75 @@ import torch
 from torch.utils.data import Dataset
 
 
+def create_boundary_target(
+    instance_mask,
+    boundary_width=2,
+    adaptive=False,
+):
+    """
+    Converte uma máscara de instâncias em um alvo de 3 classes:
+
+        0 = background
+        1 = interior
+        2 = boundary
+
+    A fronteira é construída dentro de cada instância por erosão
+    morfológica.
+
+    adaptive=True garante ao menos 1 px de interior por instância. Sem
+    isso, um núcleo de 4 px perde o interior inteiro, o watershed fica
+    sem marcador e o objeto some da saída (ver Parte 5).
+    """
+
+    target = np.zeros_like(instance_mask, dtype=np.int64)
+
+    instance_ids = np.unique(instance_mask)
+    instance_ids = instance_ids[instance_ids != 0]
+
+    for instance_id in instance_ids:
+
+        mask = instance_mask == instance_id
+
+        eroded = ndimage.binary_erosion(
+            mask,
+            iterations=boundary_width,
+            border_value=0,
+        )
+
+        if adaptive and not eroded.any():
+
+            # Afina a fronteira até sobrar interior.
+            for iterations in range(boundary_width - 1, 0, -1):
+
+                eroded = ndimage.binary_erosion(
+                    mask,
+                    iterations=iterations,
+                    border_value=0,
+                )
+
+                if eroded.any():
+                    break
+
+            # Pequeno demais até para 1 px de fronteira: guarda o ponto
+            # mais interno como interior.
+            if not eroded.any():
+
+                inner = ndimage.distance_transform_edt(mask)
+
+                peak = np.unravel_index(
+                    np.argmax(np.where(mask, inner, -1.0)),
+                    inner.shape,
+                )
+
+                eroded = np.zeros_like(mask)
+                eroded[peak] = True
+
+        target[eroded] = 1
+        target[mask & ~eroded] = 2
+
+    return target
+
+
 class DSB2018Dataset(Dataset):
     """
     Dataset loader for the DSB2018-style directory structure.
@@ -111,73 +180,14 @@ class DSB2018Dataset(Dataset):
     
     def _create_boundary_target(self, instance_mask, boundary_width=2):
         """
-        Converte uma máscara de instâncias em um target de 3 classes:
-    
-            0 = background
-            1 = interior
-            2 = boundary
-    
-        A boundary é construída dentro de cada instância através
-        de erosão morfológica.
+        Ver create_boundary_target, no nível do módulo.
         """
-    
-        target = np.zeros_like(
+
+        return create_boundary_target(
             instance_mask,
-            dtype=np.int64
+            boundary_width=boundary_width,
+            adaptive=self.adaptive_boundary,
         )
-    
-        instance_ids = np.unique(instance_mask)
-        instance_ids = instance_ids[instance_ids != 0]
-    
-        for instance_id in instance_ids:
-    
-            mask = instance_mask == instance_id
-    
-            # Erode o objeto
-            eroded = ndimage.binary_erosion(
-                mask,
-                iterations=boundary_width,
-                border_value=0
-            )
-
-            if self.adaptive_boundary and not eroded.any():
-
-                # Afina a fronteira ate sobrar interior.
-                for iterations in range(boundary_width - 1, 0, -1):
-
-                    eroded = ndimage.binary_erosion(
-                        mask,
-                        iterations=iterations,
-                        border_value=0
-                    )
-
-                    if eroded.any():
-                        break
-
-                # Nucleo pequeno demais ate para 1 px de fronteira:
-                # guarda o ponto mais interno como interior.
-                if not eroded.any():
-
-                    inner = ndimage.distance_transform_edt(mask)
-
-                    peak = np.unravel_index(
-                        np.argmax(np.where(mask, inner, -1.0)),
-                        inner.shape
-                    )
-
-                    eroded = np.zeros_like(mask)
-                    eroded[peak] = True
-    
-            # Pixels removidos pela erosão = boundary
-            boundary = mask & ~eroded
-    
-            # Interior
-            target[eroded] = 1
-    
-            # Boundary
-            target[boundary] = 2
-    
-        return target
 
     def __getitem__(self, index):
         sample = self.samples[index]
