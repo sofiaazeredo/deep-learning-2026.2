@@ -161,3 +161,110 @@ def boundary_prediction_to_instances(
     )
 
     return instances.astype(np.int32)
+
+def boundary_prediction_to_instances_seeded(
+    prediction,
+    interior_threshold=0.5,
+    foreground_threshold=0.5,
+    min_size=5,
+    max_rescue_area=60,
+):
+    """
+    Igual a boundary_prediction_to_instances, MAIS um marcador de
+    resgate para os núcleos que ficaram sem interior.
+
+    Motivo (Parte 5): o alvo de 3 classes é construído com erosão de 2
+    px, então todo núcleo com diâmetro <= 4 px perde 100% do interior e
+    29.8% dos de 4-8 px também. A rede nunca vê interior nesses casos,
+    prevê o núcleo inteiro como fronteira, o watershed fica sem
+    marcador e o objeto SOME da saída — mesmo com o mapa de fronteira
+    acertando a posição dele.
+
+    A correção: cada componente conexo de foreground que não contém
+    nenhum marcador de interior ganha um marcador no seu ponto mais
+    interno (máximo da transformada de distância).
+
+    max_rescue_area limita o resgate aos componentes PEQUENOS, que são
+    os que o diagnóstico cobre (área 60 px ~ diâmetro 8.7 px, o ponto
+    em que a erosão de 2 px ainda apaga o interior). Resgatar qualquer
+    componente sem marcador, sem esse limite, piora o mAP médio: os
+    componentes grandes sem interior costumam ser ruído de fundo, e
+    semeá-los cria falsos positivos. Use max_rescue_area=None para
+    reproduzir a versão irrestrita.
+    """
+
+    if isinstance(prediction, torch.Tensor):
+        prediction = prediction.detach().cpu().numpy()
+
+    prediction = np.asarray(prediction)
+
+    if prediction.ndim != 3:
+        raise ValueError(
+            f"Expected [3, H, W], got {prediction.shape}"
+        )
+
+    background_prob = prediction[0]
+    interior_prob = prediction[1]
+
+    foreground = (1.0 - background_prob) >= foreground_threshold
+
+    interior = (interior_prob >= interior_threshold) & foreground
+
+    markers, num_markers = ndimage.label(interior)
+
+    # Remove marcadores minúsculos, como na versão original.
+    if min_size > 0 and num_markers > 0:
+
+        sizes = ndimage.sum(
+            interior,
+            markers,
+            range(1, num_markers + 1)
+        )
+
+        clean = np.zeros_like(interior, dtype=bool)
+
+        for marker_id, size in enumerate(sizes, start=1):
+            if size >= min_size:
+                clean[markers == marker_id] = True
+
+        markers, num_markers = ndimage.label(clean)
+
+    distance = ndimage.distance_transform_edt(foreground)
+
+    # ---- resgate: foreground sem marcador nenhum ----
+    components, num_components = ndimage.label(foreground)
+
+    rescued = 0
+
+    for component_id in range(1, num_components + 1):
+
+        component = components == component_id
+
+        if markers[component].max() > 0:
+            continue
+
+        if (
+            max_rescue_area is not None
+            and component.sum() > max_rescue_area
+        ):
+            continue
+
+        # Ponto mais interno do componente vira o marcador.
+        local_distance = np.where(component, distance, -1.0)
+
+        peak = np.unravel_index(
+            np.argmax(local_distance),
+            local_distance.shape
+        )
+
+        num_markers += 1
+        markers[peak] = num_markers
+        rescued += 1
+
+    instances = watershed(
+        -distance,
+        markers=markers,
+        mask=foreground
+    )
+
+    return instances.astype(np.int32), rescued

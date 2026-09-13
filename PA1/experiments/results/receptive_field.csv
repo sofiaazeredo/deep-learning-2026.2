@@ -1,0 +1,9 @@
+metric,value
+rf_sem_aspp_px,200
+rf_com_aspp_px,456
+n_nucleos,29455
+diametro_mediano_px,11.994835078277376
+diametro_p99_px,43.158398702952425
+diametro_max_px,83.43141249593666
+pct_maiores_que_rf_sem_aspp,0.0
+pct_maiores_que_rf_com_aspp,0.0

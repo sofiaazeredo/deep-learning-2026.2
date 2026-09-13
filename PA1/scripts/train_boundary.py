@@ -100,6 +100,16 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--adaptive-boundary",
+        action="store_true",
+        help=(
+            "Garante ao menos 1 px de interior por nucleo no alvo. "
+            "Sem isso, nucleos <= 4 px ficam 100%% fronteira e somem "
+            "na decodificacao (ver Parte 5)."
+        ),
+    )
+
+    parser.add_argument(
         "--name",
         type=str,
         default="boundary_experiment",
@@ -333,7 +343,8 @@ def main():
     # --------------------------------------------------------
 
     dataset = DSB2018Dataset(
-        DATA_ROOT
+        DATA_ROOT,
+        adaptive_boundary=args.adaptive_boundary,
     )
 
     train_dataset, val_dataset, _ = create_splits(
@@ -531,6 +542,9 @@ def main():
 
                     "architecture":
                         args.architecture,
+
+                    "adaptive_boundary":
+                        args.adaptive_boundary,
 
                     "seed":
                         args.seed,

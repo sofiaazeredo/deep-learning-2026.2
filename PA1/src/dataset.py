@@ -27,9 +27,15 @@ class DSB2018Dataset(Dataset):
     Each PNG inside masks/ represents one individual instance.
     """
 
-    def __init__(self, root, transform=None):
+    def __init__(self, root, transform=None, adaptive_boundary=False):
         self.root = Path(root)
         self.transform = transform
+        # Ver src/postprocessing.boundary_prediction_to_instances_seeded
+        # e scripts/failure_correction.py: com erosao fixa de 2 px, todo
+        # nucleo com diametro <= 4 px fica sem interior no alvo e nunca
+        # pode ser decodificado. adaptive_boundary=True garante ao menos
+        # um pixel de interior por instancia.
+        self.adaptive_boundary = adaptive_boundary
 
         self.samples = self._find_samples()
 
@@ -133,6 +139,34 @@ class DSB2018Dataset(Dataset):
                 iterations=boundary_width,
                 border_value=0
             )
+
+            if self.adaptive_boundary and not eroded.any():
+
+                # Afina a fronteira ate sobrar interior.
+                for iterations in range(boundary_width - 1, 0, -1):
+
+                    eroded = ndimage.binary_erosion(
+                        mask,
+                        iterations=iterations,
+                        border_value=0
+                    )
+
+                    if eroded.any():
+                        break
+
+                # Nucleo pequeno demais ate para 1 px de fronteira:
+                # guarda o ponto mais interno como interior.
+                if not eroded.any():
+
+                    inner = ndimage.distance_transform_edt(mask)
+
+                    peak = np.unravel_index(
+                        np.argmax(np.where(mask, inner, -1.0)),
+                        inner.shape
+                    )
+
+                    eroded = np.zeros_like(mask)
+                    eroded[peak] = True
     
             # Pixels removidos pela erosão = boundary
             boundary = mask & ~eroded
