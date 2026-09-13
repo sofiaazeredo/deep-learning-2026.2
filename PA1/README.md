@@ -14,16 +14,19 @@ máscara PNG por núcleo.
 
 | Parte | Modelo | mAP@0,50:0,95 | Erro de contagem |
 |---|---|---|---|
-| 0 — teste unitário sintético | U-Net reduzida, 3 classes | 0,525 | 1,42 |
-| 1 — baseline semântico + componentes conexos | U-Net, 2 classes | 0,438 | 13,10 |
-| 2 — fronteira + watershed (Trilha A) | U-Net, 3 classes | 0,489 | 12,24 |
+| 0 — teste unitário sintético | U-Net reduzida, 3 classes | 0,523 | 1,41 |
+| 1 — baseline semântico + componentes conexos | U-Net, 2 classes | 0,422 | 8,68 |
+| 2 — fronteira + watershed (Trilha A) | U-Net, 3 classes | 0,504 | 8,44 |
 
-Modelo final (`loss_balanced_seed123`) no teste: **mAP 0,4935**, erro de contagem 12,03.
+Modelo final (`resolution_aspp_seed42`) no teste: **mAP 0,4911**, erro de contagem 8,08.
+
+Todos os números abaixo usam o **split estratificado por modalidade** (66 imagens
+de teste).
 
 **Parte 0 — teste unitário sintético**: 256 imagens 128×128 com 5 a 20 elipses
 (13,2 por imagem em média, 84,3% encostando em algum vizinho), ruído e contraste
-variáveis. Treina em **188 s (3,1 min)**, dentro do limite de 5 minutos do
-enunciado, e atinge mAP 0,525. Usa o mesmo encoder-decoder, a mesma perda, a
+variáveis. Treina em **126 s (2,1 min)** numa T4, dentro do limite de 5 minutos
+do enunciado, e atinge mAP 0,523. Usa o mesmo encoder-decoder, a mesma perda, a
 mesma decodificação por watershed e a mesma métrica dos dados reais — se alguma
 peça do pipeline quebrar, quebra aqui em minutos.
 
@@ -32,33 +35,45 @@ perda e mesmo split):
 
 | Arquitetura | mAP | Erro de contagem |
 |---|---|---|
-| U-Net + skips | **0,4885 ± 0,0070** | 12,24 ± 0,30 |
-| U-Net + ASPP | 0,4424 ± 0,0208 | 12,80 ± 0,69 |
-| U-Net sem skips | 0,2699 ± 0,0770 | 25,01 ± 7,98 |
+| U-Net + ASPP | 0,4834 ± 0,0108 | 8,32 |
+| U-Net + skips | 0,4770 ± 0,0094 | 8,57 |
+| U-Net sem skips | 0,3697 ± 0,0228 | 12,04 |
+
+**A diferença entre ASPP e skips NÃO é conclusiva**: 0,0065 de distância contra
+0,0202 de soma dos desvios, com 2 seeds. O que o experimento mostra com clareza é
+o terceiro lugar — **tirar as skip connections custa 0,11 de mAP e 45% a mais de
+erro de contagem**. Entre skips e ASPP, o experimento não decide.
+
+As três arquiteturas foram treinadas com `balanced_ce` para a comparação ficar
+controlada, embora o Eixo 2 mostre que essa não é a melhor perda.
 
 **Parte 3, Eixo 2 — função de perda** (2 seeds):
 
-| Perda | mAP |
-|---|---|
-| Weighted CE | 0,4885 ± 0,0070 |
-| Focal γ=1 | 0,4867 ± 0,0071 |
-| CE | 0,4826 ± 0,0052 |
-| Focal γ=2 | 0,4816 ± 0,0060 |
-| Focal γ=5 | 0,3716 ± 0,0392 |
+| Perda | mAP | Erro de contagem |
+|---|---|---|
+| CE | **0,5040 ± 0,0048** | 8,44 |
+| Focal γ=2 | 0,5033 ± 0,0055 | 8,59 |
+| Focal γ=1 | 0,4949 ± 0,0054 | 8,74 |
+| Weighted CE | 0,4770 ± 0,0094 | 8,57 |
+| Focal γ=5 | 0,4350 ± 0,0343 | 8,56 |
 
-Modelo final: **U-Net com skip connections + Weighted CE**, seed 123.
+CE, focal γ=2 e focal γ=1 estão dentro de um desvio umas das outras. O que separa
+é o extremo: **γ=5 desaba** (0,435, com desvio 7× maior que os demais), e pesar a
+classe fronteira (Weighted CE) **piora** em vez de ajudar.
+
+Modelo final: **U-Net + ASPP**, seed 42.
 
 **Parte 4 — inferência em mosaico** (mosaico 3×3, tiles de 256 px, sobreposição 64 px):
 
 | decodificação | mAP | núcleos previstos |
 |---|---|---|
-| passada única | 0,3327 | 344 |
-| tiles, sem fusão | 0,2641 | 472 |
-| tiles, com fusão | **0,3350** | 356 |
-| ground truth | — | 437 |
+| passada única | 0,4585 | 290 |
+| tiles, sem fusão | 0,3548 | 413 |
+| tiles, com fusão | **0,4510** | 306 |
+| ground truth | — | 337 |
 
-A fusão de instâncias entre tiles recupera **+0,0709 de mAP** e elimina os ~116
-objetos duplicados nas costuras.
+A fusão de instâncias entre tiles recupera **+0,0961 de mAP** e elimina os ~107
+objetos duplicados nas costuras, voltando praticamente ao nível da passada única.
 
 **Parte 5 — campo receptivo**: 200 px sem ASPP, 456 px com. Os núcleos têm 12 px
 de mediana e 83 px no máximo: **0,00% excedem o campo receptivo**, ou seja, o
@@ -66,13 +81,19 @@ campo receptivo não é o gargalo deste dataset.
 
 **Parte 6 — teste de estresse** (corrupções, 3 intensidades):
 
+Referência sem estresse: mAP 0,4911.
+
 | | leve | média | forte |
 |---|---|---|---|
-| blur (σ) | 0,4310 (−13%) | 0,2858 (−42%) | 0,1497 (−70%) |
-| ruído (σ) | 0,2498 (−49%) | 0,0879 (−82%) | 0,0188 (−96%) |
-| brilho (Δ) | 0,1341 (−73%) | 0,0249 (−95%) | 0,0000 (−100%) |
+| blur (σ) | 0,4408 (−10%) | 0,2916 (−41%) | 0,1154 (−77%) |
+| ruído (σ) | 0,3744 (−24%) | 0,1132 (−77%) | 0,0135 (−97%) |
+| brilho (Δ) | 0,1221 (−75%) | 0,0049 (−99%) | 0,0000 (−100%) |
 
-Escala: 0,5× → 0,2535 (−49%), 1× → 0,4935, 2× → 0,3443 (−30%).
+Escala: 0,5× → 0,2787 (−43%), 1× → 0,4911, 2× → 0,3586 (−27%).
+
+Brilho é de longe o eixo mais destrutivo: um deslocamento de 0,30 já derruba 99%
+do mAP. A degradação com a escala é **assimétrica** — reduzir pela metade custa
+bem mais que dobrar.
 
 ---
 
@@ -183,22 +204,22 @@ e resolvem o checkpoint sozinhos; `--checkpoint` força outro.
 
 ## Checkpoint
 
-O modelo final (`loss_balanced_seed123_best.pt`, 119 MB) não cabe no limite de
+O modelo final (`resolution_aspp_seed42_best.pt`, 151 MB) não cabe no limite de
 arquivo do GitHub (100 MB) e está no Drive:
 
-**<https://drive.google.com/file/d/1hGduuxS3UxYHJO1JFrt9-T4lfA6TfsfC/view?usp=drive_link>**
+**<COLAR O NOVO LINK DO DRIVE AQUI>**
 
 Baixe para `PA1/checkpoints/` antes de rodar as Partes 4 a 7:
 
 ```bash
 mkdir -p checkpoints
-# baixe o arquivo do link acima para checkpoints/loss_balanced_seed123_best.pt
+# baixe o arquivo do link acima para checkpoints/resolution_aspp_seed42_best.pt
 python scripts/mosaic_inference.py --grid 3 --name mosaic   # já encontra o checkpoint sozinho
 ```
 
-É a U-Net com skip connections treinada com Weighted CE, seed 123 — a
-configuração vencedora do Eixo 1 e do Eixo 2. Todas as figuras das Partes 4, 5
-e 6 saem dele.
+É a U-Net com ASPP treinada com `balanced_ce`, seed 42 — a vencedora do Eixo 1
+(por uma margem dentro do ruído, veja acima). Todas as figuras das Partes 4, 5 e
+6 saem dele.
 
 ---
 
