@@ -1,0 +1,13 @@
+{
+  "config": "U-Net + skips",
+  "architecture": "unet",
+  "map_mean": 0.4885264793066424,
+  "map_std": 0.006988994546465092,
+  "checkpoint": "checkpoints/loss_balanced_seed123_best.pt",
+  "checkpoints_all_seeds": [
+    "checkpoints/loss_balanced_seed42_best.pt",
+    "checkpoints/loss_balanced_seed123_best.pt"
+  ],
+  "metrics_csv": "loss_balanced_seed123_test_metrics.csv",
+  "selected_by": "maior mAP médio; dentro dele, a seed de maior mAP"
+}

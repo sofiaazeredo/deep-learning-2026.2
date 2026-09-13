@@ -17,6 +17,8 @@ máscara PNG por núcleo.
 | 1 — baseline semântico + componentes conexos | U-Net, 2 classes | 0,438 | 13,10 |
 | 2 — fronteira + watershed (Trilha A) | U-Net, 3 classes | 0,489 | 12,24 |
 
+Modelo final (`loss_balanced_seed123`) no teste: **mAP 0,4935**, erro de contagem 12,03.
+
 **Parte 3, Eixo 1 — como recuperar resolução** (média ± desvio, 2 seeds, mesma
 perda e mesmo split):
 
@@ -37,6 +39,32 @@ perda e mesmo split):
 | Focal γ=5 | 0,3716 ± 0,0392 |
 
 Modelo final: **U-Net com skip connections + Weighted CE**, seed 123.
+
+**Parte 4 — inferência em mosaico** (mosaico 3×3, tiles de 256 px, sobreposição 64 px):
+
+| decodificação | mAP | núcleos previstos |
+|---|---|---|
+| passada única | 0,3327 | 344 |
+| tiles, sem fusão | 0,2641 | 472 |
+| tiles, com fusão | **0,3350** | 356 |
+| ground truth | — | 437 |
+
+A fusão de instâncias entre tiles recupera **+0,0709 de mAP** e elimina os ~116
+objetos duplicados nas costuras.
+
+**Parte 5 — campo receptivo**: 200 px sem ASPP, 456 px com. Os núcleos têm 12 px
+de mediana e 83 px no máximo: **0,00% excedem o campo receptivo**, ou seja, o
+campo receptivo não é o gargalo deste dataset.
+
+**Parte 6 — teste de estresse** (corrupções, 3 intensidades):
+
+| | leve | média | forte |
+|---|---|---|---|
+| blur (σ) | 0,4310 (−13%) | 0,2858 (−42%) | 0,1497 (−70%) |
+| ruído (σ) | 0,2498 (−49%) | 0,0879 (−82%) | 0,0188 (−96%) |
+| brilho (Δ) | 0,1341 (−73%) | 0,0249 (−95%) | 0,0000 (−100%) |
+
+Escala: 0,5× → 0,2535 (−49%), 1× → 0,4935, 2× → 0,3443 (−30%).
 
 ---
 
@@ -181,7 +209,7 @@ AI_LOG.md             uso de IA neste trabalho
   par de máscaras — o resultado é idêntico e viabiliza a escala do mosaico.
 - **Split.** `create_splits` usa `random_split` com seed fixa. **Não é
   estratificado por modalidade**, que é o que o PDF pede; as consequências
-  aparecem na Parte 5 (o mAP por imagem correlaciona −0,64 com o brilho, isto é,
+  aparecem na Parte 5 (o mAP por imagem correlaciona −0,61 com o brilho, isto é,
   o modelo vai mal justamente nas modalidades claras, minoritárias no treino).
 - **Resolução.** Todas as imagens são redimensionadas para 256×256 em
   `__getitem__`, inclusive as de 1024×1024 e 1040×1388. As métricas são medidas
