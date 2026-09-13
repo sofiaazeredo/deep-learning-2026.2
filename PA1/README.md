@@ -207,7 +207,7 @@ e resolvem o checkpoint sozinhos; `--checkpoint` força outro.
 O modelo final (`resolution_aspp_seed42_best.pt`, 151 MB) não cabe no limite de
 arquivo do GitHub (100 MB) e está no Drive:
 
-**<COLAR O NOVO LINK DO DRIVE AQUI>**
+**<https://drive.google.com/file/d/1Y7Hm5JeuEKtC7s62WOb-1_TlQXMgZZap/view?usp=sharing>**
 
 Baixe para `PA1/checkpoints/` antes de rodar as Partes 4 a 7:
 
