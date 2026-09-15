@@ -1,0 +1,29 @@
+__pycache__/
+*.pyc
+
+# Ambiente
+.venv/
+
+# Dados: o MOT17 completo tem ~5,5 GB e não entra no repo.
+# O pacote só de anotações (~10 MB) também fica fora — baixe com o comando do
+# README.
+data/MOT17/*
+!data/MOT17/.gitkeep
+
+# Pesos: um único checkpoint final entra no repo (ou por link);
+# os checkpoints das ablações (3 seeds x eixo), não.
+checkpoints/*
+!checkpoints/.gitkeep
+*.pt
+*.pth
+*.zip
+
+# Vídeos gerados pela inferência
+*.mp4
+*.avi
+
+# Notebook de trabalho baixado do Colab
+assignment2_temp*.ipynb
+
+# Saídas locais do Jupyter
+.ipynb_checkpoints/
