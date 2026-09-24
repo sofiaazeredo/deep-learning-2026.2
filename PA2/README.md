@@ -112,6 +112,24 @@ O notebook `inferencia.ipynb` faz o mesmo e escreve o vídeo.
 
 ---
 
+## Testes
+
+Todos os testes ficam em `tests/`, um arquivo por módulo de `src/`
+(`tests/test_synthetic.py` testa `src/synthetic.py`, e assim por diante). Cada
+peça nova entra com o teste junto, e a suíte inteira roda a cada passo:
+
+```bash
+python -m pytest tests/                  # a suíte inteira
+python -m pytest tests/test_synthetic.py # um módulo
+python tests/test_synthetic.py           # o mesmo, sem pytest
+```
+
+Enquanto uma parte não está implementada, o teste dela falha com
+`NotImplementedError` — é o sinal de que falta aquela parte, não de que algo
+quebrou.
+
+---
+
 ## Reproduzir cada parte
 
 O split é por sequência e fixo, independente da seed de treino, então todas as
@@ -120,7 +138,7 @@ execuções compartilham exatamente o mesmo conjunto de teste.
 ```bash
 # Parte 0 — sintético (não precisa do MOT17)
 python scripts/generate_synthetic.py --name synthetic
-python scripts/test_metrics.py                       # os três casos à mão
+python tests/test_metrics.py                         # os três casos à mão
 python scripts/baseline_synthetic.py --sweep occlusion --name synthetic_sweep
 
 # Parte 1 — baseline por quadro
@@ -189,6 +207,9 @@ src/
   training.py         BPTT truncado, regimes de treino, perfil de gradiente
   inference.py        sequência qualquer -> vídeo com IDs + contagem
 scripts/              um script por etapa (ver acima)
+tests/                testes de cada módulo de src/, rodados com pytest
+  test_synthetic.py   gerador: formato, determinismo, oclusão de N quadros
+  test_metrics.py     os três casos à mão da métrica (Parte 0.3)
 experiments/
   results/            um CSV por execução + os sumários das ablações
   figures/            todas as figuras da apresentação

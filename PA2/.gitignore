@@ -9,6 +9,8 @@ __pycache__/
 # README.
 data/MOT17/*
 !data/MOT17/.gitkeep
+# Vídeos sintéticos: regenerados por scripts/generate_synthetic.py (~10 MB).
+data/synthetic/
 
 # Pesos: um único checkpoint final entra no repo (ou por link);
 # os checkpoints das ablações (3 seeds x eixo), não.
