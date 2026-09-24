@@ -209,6 +209,7 @@ src/
 scripts/              um script por etapa (ver acima)
 tests/                testes de cada módulo de src/, rodados com pytest
   test_synthetic.py   gerador: formato, determinismo, oclusão de N quadros
+  test_detector_sim.py simulador de detector: descarte, ruído, falsos positivos
   test_metrics.py     os três casos à mão da métrica (Parte 0.3)
 experiments/
   results/            um CSV por execução + os sumários das ablações
