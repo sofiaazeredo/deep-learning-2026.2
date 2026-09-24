@@ -225,8 +225,12 @@ métrica, split, resolução/escala, e o que ficou fora.)
 
 - **Métrica de identidade.** IDF1 exige uma atribuição global um-para-um entre
   identidades previstas e verdadeiras ao longo da sequência inteira, não um
-  casamento por quadro. O matching por IoU reaproveita o do PA1, como o
-  enunciado permite.
+  casamento por quadro. ID switches e fragmentações usam o casamento por
+  quadro do CLEAR MOT: o par (gt, predição) do quadro anterior continua se o
+  IoU ainda passa do limiar, e só o resto vai para o Hungarian — sem isso,
+  duas trajetórias que se cruzam contam switch à toa. Fragmentação só conta
+  interrupção em quadro em que a identidade está no ground truth (oclusão
+  total não fragmenta). Limiar de IoU 0,5, inclusivo.
 - **Split.** Por sequência, nunca por quadro: separar quadros aleatoriamente
   põe o quadro t no treino e o t+1 na validação, e o modelo temporal seria
   avaliado em cima do que já viu.
