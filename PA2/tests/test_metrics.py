@@ -7,13 +7,13 @@ Três casos construídos à mão, com a resposta conhecida:
   (c) uma track partida em duas no meio -> o efeito em IDF1, que NÃO é o
       mesmo de (b) — partir não troca identidade, fragmenta.
 
-Roda com "python scripts/test_metrics.py" ou sob pytest.
+Roda com "python tests/test_metrics.py" ou sob pytest.
 """
 
 import sys
 from pathlib import Path
 
-# Rodar "python scripts/x.py" coloca scripts/ no sys.path, não a raiz do
+# Rodar "python tests/x.py" coloca tests/ no sys.path, não a raiz do
 # projeto, então "import src" falha. Isso resolve sem exigir PYTHONPATH.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
