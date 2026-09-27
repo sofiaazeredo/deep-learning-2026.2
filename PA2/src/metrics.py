@@ -275,6 +275,37 @@ def idf1(gt_tracks, pred_tracks, threshold=0.5):
     return score, idp, idr, details
 
 
+def switch_events(gt_tracks, pred_tracks, threshold=0.5):
+    """
+    Cada troca de id previsto de uma identidade verdadeira: quadro, gap
+    desde o último casamento, id previsto antigo e novo.
+    """
+
+    gt_frames, matches = _clear_mot_matches(gt_tracks, pred_tracks, threshold)
+    events = []
+
+    for gt_id, frames in gt_frames.items():
+        previous = None
+        prev_frame = None
+        for frame in frames:
+            pred_id = matches[frame].get(gt_id)
+            if pred_id is None:
+                continue
+            if previous is not None and pred_id != previous:
+                events.append({
+                    "gt_id": int(gt_id),
+                    "frame": int(frame),
+                    "prev_frame": int(prev_frame),
+                    "gap": int(frame - prev_frame),
+                    "pred_from": int(previous),
+                    "pred_to": int(pred_id),
+                })
+            previous = pred_id
+            prev_frame = frame
+
+    return events
+
+
 def id_switches(gt_tracks, pred_tracks, threshold=0.5):
     """
     Número de vezes que uma identidade verdadeira muda de identidade prevista

@@ -13,7 +13,7 @@ import torch
 
 from src.losses import ContrastiveIdentityLoss, SmoothL1BoxLoss
 from src.model import AppearanceRNN, MotionRNN
-from src.training import truncated_bptt
+from src.training import gradient_norm_profile, truncated_bptt
 
 
 def test_truncated_bptt_reduces_loss_on_toy_window():
@@ -65,6 +65,25 @@ def test_truncated_bptt_box_loss_drops():
         last = float(truncated_bptt(model, window, box_loss_fn=loss_fn,
                                     optimizer=optimizer).detach())
     assert last < first
+
+
+def test_gradient_norm_profile_has_a_length():
+    torch.manual_seed(0)
+    model = AppearanceRNN(cell="gru", embed_dim=8, hidden=16)
+    base = {
+        1: torch.nn.functional.normalize(torch.randn(8), dim=0),
+        2: torch.nn.functional.normalize(torch.randn(8), dim=0),
+    }
+    window = {}
+    for identity, vector in base.items():
+        window[identity] = [
+            (frame, torch.nn.functional.normalize(vector + 0.3 * torch.randn(8),
+                                                  dim=0))
+            for frame in (1, 2, 3, 4)
+        ]
+    profile = gradient_norm_profile(model, window)
+    assert len(profile) >= 2
+    assert all(value >= 0 for value in profile)
 
 
 def main():

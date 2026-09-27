@@ -153,6 +153,33 @@ def test_geometry_rematches_on_predicted_box_after_miss():
         assert first_iou[(0.0, 0.0)] != later_iou[(100.0, 0.0)]
 
 
+def test_miss_prefer_iou_keeps_nearby_box_against_swapped_embeddings():
+    # Depois do miss as caixas quase não andam, mas os embeddings vêm
+    # trocados. Sem a correção a aparência troca os ids; com
+    # miss_prefer_iou o IoU da última caixa ganha.
+    detections = [(1, 0.0, 0.0, 10.0, 10.0, 1.0),
+                  (1, 80.0, 0.0, 10.0, 10.0, 1.0),
+                  (3, 1.0, 0.0, 10.0, 10.0, 1.0),
+                  (3, 81.0, 0.0, 10.0, 10.0, 1.0)]
+    embeddings = [
+        np.array([1.0, 0.0]),
+        np.array([0.0, 1.0]),
+        np.array([0.0, 1.0]),
+        np.array([1.0, 0.0]),
+    ]
+    app_tracks = Tracker(iou_threshold=0.3, max_age=5, min_hits=1,
+                         motion=FakeAppearance(),
+                         appearance_threshold=0.5).run(detections, embeddings)
+    fix_tracks = Tracker(iou_threshold=0.3, max_age=5, min_hits=1,
+                         motion=FakeAppearance(), appearance_threshold=0.5,
+                         miss_prefer_iou=True).run(detections, embeddings)
+    first = {row[2:4]: row[1] for row in app_tracks if row[0] == 1}
+    later_app = {row[2:4]: row[1] for row in app_tracks if row[0] == 3}
+    later_fix = {row[2:4]: row[1] for row in fix_tracks if row[0] == 3}
+    assert first[(0.0, 0.0)] == later_app.get((81.0, 0.0))
+    assert first[(0.0, 0.0)] == later_fix.get((1.0, 0.0))
+
+
 def test_miss_resets_consecutive_hits_before_confirmation():
     tracker = Tracker(min_hits=3, max_age=5, iou_threshold=0.3)
     detections = boxes_at([1, 2, 4, 5, 6], 0.0, 0.0)

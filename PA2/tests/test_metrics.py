@@ -35,6 +35,7 @@ from src.metrics import (
     evaluate_sequence,
     average_precision,
     drop_distractor_matches,
+    switch_events,
 )
 
 T = 20   # quadros dos casos à mão
@@ -84,6 +85,16 @@ def test_swapped_identities():
     # de cada identidade: IDF1 = 2*24 / (2*24 + 16 + 16) = 12/20.
     assert details["idtp"] == 2 * (T - K)
     assert np.isclose(score, (T - K) / T)
+
+
+def test_switch_events_reports_gap():
+    first, second = track(1, range(T), y=0), track(2, range(T), y=50)
+    pred = (relabel(first[:K], 10) + relabel(first[K:], 20)
+            + relabel(second[:K], 20) + relabel(second[K:], 10))
+    events = switch_events(GT, pred)
+    assert len(events) == 2
+    assert all(event["gap"] == 1 for event in events)
+    assert {event["pred_from"] for event in events} == {10, 20}
 
 
 def test_broken_track():

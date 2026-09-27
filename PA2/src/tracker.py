@@ -47,7 +47,7 @@ class Tracker:
 
     def __init__(self, iou_threshold=0.3, max_age=30, min_hits=3,
                  matcher="hungarian", motion=None, appearance_threshold=0.5,
-                 image_size=None):
+                 image_size=None, miss_prefer_iou=False):
         self.iou_threshold = float(iou_threshold)
         self.max_age = int(max_age)
         self.min_hits = int(min_hits)
@@ -55,6 +55,7 @@ class Tracker:
         self.motion = motion
         self.appearance_threshold = float(appearance_threshold)
         self.image_size = image_size or (1.0, 1.0)
+        self.miss_prefer_iou = bool(miss_prefer_iou)
         self.tracks = []
         self._next_id = 1
 
@@ -175,6 +176,17 @@ class Tracker:
 
         remain_tracks = [i for i in lost if i not in used_tracks]
         remain_dets = [j for j in range(len(detections)) if j not in used_dets]
+        if self.miss_prefer_iou and remain_tracks and remain_dets:
+            last_boxes = np.stack([self.tracks[i].box for i in remain_tracks])
+            leftover = detections[remain_dets]
+            for a, b in matcher(iou_cost(last_boxes, leftover),
+                                1.0 - self.iou_threshold):
+                pairs.append((remain_tracks[a], remain_dets[b]))
+                used_tracks.add(remain_tracks[a])
+                used_dets.add(remain_dets[b])
+            remain_tracks = [i for i in lost if i not in used_tracks]
+            remain_dets = [j for j in range(len(detections)) if j not in used_dets]
+
         if not remain_tracks or not remain_dets:
             return pairs
 

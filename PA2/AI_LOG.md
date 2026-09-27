@@ -61,6 +61,24 @@ Decisão que a IA não tomou sozinha: o eixo (input, não célula). A
 fusão `min(cosseno, IoU)` não pegou o melhor dos dois — na 04 a
 geometria sozinha é que segura a densidade.
 
+### Parte 4 — galeria, horizonte e correção
+
+A IA implementou o perfil `||∂L_t/∂h_{t-k}||`, os intervalos de
+oclusão, a galeria a partir dos ID switches do CLEAR MOT e a flag
+`miss_prefer_iou`. Os números (118/1111 sobrevivências, teste
+0,552 → 0,568) saíram dos scripts.
+
+A primeira galeria pegou os três gaps de 200+ quadros (pessoa que
+saiu da cena). Recolhemos por tipo: miss curto na 04, oclusão de 24
+na 02, buraco de T=16 na 09. O InfoNCE só no último quadro dava
+perda zero (cada id uma vez); L_t passou a ser a InfoNCE das
+consultas do quadro t contra o histórico destacado, para o único
+caminho até h_{t-k} ser a recorrência.
+
+Decisão que a IA não tomou sozinha: a correção (IoU da última caixa
+depois do miss, sugerida pela 04). Funcionou — o diagnóstico estava
+certo nas cenas densas.
+
 ### Erros da IA que tivemos que corrigir
 
 - O gráfico do descolamento saiu ordenado por número da cena (02…13),

@@ -29,6 +29,8 @@ caixas e identidades anotadas quadro a quadro.
 | 2 — as 7 sequências | mesma regra | 0,510 | 1930 | 170,4 |
 | 3 — Eixo 3, teste 09+11 | aparência (melhor no teste), 3 seeds | 0,554 ± 0,001 | 215 ± 1 | 61,2 ± 4,0 |
 | 3 — Eixo 3, as 7 | geometria (melhor no agregado), 3 seeds | 0,532 ± 0,013 | 1609 ± 164 | 137 ± 36 |
+| 4 — correção (teste 09+11) | mesma GRU, IoU da última caixa depois do miss | 0,568 | 153 | 22,5 |
+| 4 — as 7 | mesma regra | 0,546 | 1383 | 63,3 |
 
 Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 
@@ -40,6 +42,7 @@ Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 - **associação:** última caixa observada vs. detecção; Hungarian (guloso fica 0,532 nas 7, com 1906 switches contra 1674); limiar, `min_hits` e `max_age` varridos só no treino (melhor IDF1 0,523 em IoU 0,2 / min_hits=2 / max_age=20). `min_hits` é consecutivo; quadros antes da confirmação e quadros sem match não saem.
 - **trilha da Parte 2 — B, RNN como memória de aparência.** O baseline quebra quando a pessoa some e reaparece longe da última caixa; um modelo de movimento (Trilha A) não alcança isso. O GRU agrega o embedding do recorte; o portão de IoU só vale no quadro em que a track acabou de ser vista.
 - **eixo da Parte 3 — o que entra na recorrência.** Só geometria, só aparência, ou os dois. 3 seeds (42, 123, 7). No teste a aparência fica à frente (0,554 ± 0,001); nas sete a geometria ganha (0,532 ± 0,013) porque segura a cena densa 04. Os dois juntos não pegam o melhor de cada um.
+- **correção da Parte 4 — `miss_prefer_iou`.** A GRU não esquece (o gradiente em k=14 ainda é ~90% do de k=0); o que mata a identidade é o casamento depois do miss. Preferir o IoU da última caixa nas tracks perdidas, e só então o cosseno, sobe o teste de 0,552 para 0,568 e as sete de 0,510 para 0,546 — acima do baseline (0,537).
 - **estresse da Parte 5** — queda de taxa de quadros ou qualidade do detector.
 
 ---
@@ -213,11 +216,11 @@ tests/                testes de cada módulo de src/, rodados com pytest
   test_dataset.py     parse MOT, pedestres vs distractores, split fixo
   test_detection.py   NMS contra resultado conhecido
   test_association.py custo IoU, cosseno, guloso e Hungarian
-  test_tracker.py     persistência, min_hits, morte, re-id por aparência
+  test_tracker.py     persistência, min_hits, morte, miss_prefer_iou
   test_appearance.py  recorte preso à imagem, encoder L2 congelado
   test_model.py       passo do AppearanceRNN
   test_losses.py      InfoNCE: mesmo id mais perto que id diferente
-  test_training.py    BPTT truncado reduz a perda numa janela-brinquedo
+  test_training.py    BPTT truncado e perfil ||∂L/∂h_{t-k}||
   test_baseline_synthetic.py  piso fácil IDF1 ≈ 1; oclusão longa dói
 experiments/
   results/            um CSV por execução + os sumários das ablações
@@ -294,5 +297,20 @@ métrica, split, resolução/escala, e o que ficou fora.)
   as duas cabeças não herda o melhor dos dois. A pergunta do enunciado:
   quem sustenta a identidade numa oclusão longa *muda com a densidade*
   — geometria na multidão, aparência no teste mais espaçado.
+- **Galeria e horizonte (Parte 4).** Três falhas do checkpoint de
+  aparência seed 42: miss de 1 quadro na 04 densa (ids vizinhos
+  trocados), oclusão de 24 quadros na 02 (acima de `max_age=20`, a
+  track morre), buraco de 16 quadros na 09 de teste (cabe exatamente
+  em T). Analítico: `||∂L_t/∂h_{t-k}||` da InfoNCE no último quadro
+  com positivo no passado; a GRU segura ~90% do gradiente até k=14 —
+  não é o gradiente que some. Empírico: 118 de 1111 oclusões
+  (`visibility < 0,25`) voltam com o mesmo id; a mediana das que
+  sobrevivem é 3 quadros, a do dataset é 8. A correção
+  `miss_prefer_iou` ataca o diagnóstico da 04: nas tracks perdidas o
+  Hungarian de IoU da última caixa roda antes do cosseno. Teste
+  0,552 → 0,568 (quase o baseline 0,570); as sete 0,510 → 0,546 e
+  1930 → 1383 switches, passando o baseline. O ganho grande é 02 e
+  04; 10 e 13 mal andam — oclusão longa + câmera móvel não se resolve
+  com a caixa velha.
 - **MOTA.** Opcional e reportada à parte: com o detector congelado, os termos de
   FP/FN quase não variam entre as configurações e ela esconde o que muda.

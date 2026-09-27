@@ -171,6 +171,39 @@ def occlusion_runs(gt_tracks, visibility_threshold=VISIBILITY_OCCLUDED):
     return runs
 
 
+def occlusion_intervals(gt_tracks, visibility_threshold=VISIBILITY_OCCLUDED):
+    """
+    Por identidade, intervalos (quadro_inicial, quadro_final, duração) com
+    visibility abaixo do limiar.
+    """
+
+    by_id = {}
+
+    for row in gt_tracks:
+        if row[8] is None:
+            continue
+        by_id.setdefault(int(row[1]), []).append((int(row[0]), float(row[8])))
+
+    intervals = {}
+
+    for identity, items in by_id.items():
+        items.sort()
+        start = None
+        found = []
+        for frame, visibility in items:
+            if visibility < visibility_threshold:
+                if start is None:
+                    start = frame
+            elif start is not None:
+                found.append((start, frame - 1, frame - start))
+                start = None
+        if start is not None:
+            found.append((start, items[-1][0], items[-1][0] - start + 1))
+        intervals[identity] = found
+
+    return intervals
+
+
 def median_occlusion(gt_tracks, visibility_threshold=VISIBILITY_OCCLUDED):
     lengths = [length
                for runs in occlusion_runs(gt_tracks, visibility_threshold).values()

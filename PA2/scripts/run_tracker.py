@@ -53,6 +53,8 @@ def main():
     parser.add_argument("--max-age", type=int, default=20)
     parser.add_argument("--min-hits", type=int, default=2)
     parser.add_argument("--appearance-threshold", type=float, default=0.5)
+    parser.add_argument("--miss-prefer-iou", action="store_true",
+                        help="correção da Parte 4: IoU da última caixa depois do miss")
     parser.add_argument("--device", default=None)
     parser.add_argument("--name", required=True)
     args = parser.parse_args()
@@ -94,7 +96,8 @@ def main():
                           max_age=args.max_age, min_hits=args.min_hits,
                           matcher="hungarian", motion=model,
                           appearance_threshold=args.appearance_threshold,
-                          image_size=(info["im_width"], info["im_height"]))
+                          image_size=(info["im_width"], info["im_height"]),
+                          miss_prefer_iou=args.miss_prefer_iou)
         tracks = tracker.run(dets, embeddings=embeddings,
                              image_size=(info["im_width"], info["im_height"]))
         print(f"{scene}  {info['camera']:<7}  {len(tracks)} caixas  "
