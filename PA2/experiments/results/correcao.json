@@ -1,0 +1,9 @@
+{
+  "diagnosis": "Depois de um miss curto em cena densa a apar\u00eancia casa o pedestre errado. Corre\u00e7\u00e3o: nas tracks perdidas, IoU da \u00faltima caixa primeiro; o cosseno s\u00f3 no que sobra.",
+  "test_idf1_before": 0.5523889967764399,
+  "test_idf1_after": 0.5680289540472492,
+  "all_idf1_before": 0.5097628933757842,
+  "all_idf1_after": 0.5464165534177662,
+  "all_switches_before": 1930,
+  "all_switches_after": 1383
+}

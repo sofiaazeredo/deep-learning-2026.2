@@ -1,0 +1,8 @@
+{
+  "n_occlusions": 1111,
+  "n_survived": 118,
+  "survive_rate": 0.10621062106210621,
+  "median_occlusion": 8.0,
+  "median_survived": 3.0,
+  "max_survived": 69
+}

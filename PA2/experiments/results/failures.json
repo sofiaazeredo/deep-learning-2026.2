@@ -1,0 +1,44 @@
+[
+  {
+    "gt_id": 68,
+    "frame": 114,
+    "prev_frame": 113,
+    "gap": 1,
+    "pred_from": 66,
+    "pred_to": 67,
+    "scene": "04",
+    "camera": "static",
+    "occlusion": 19.5,
+    "density": 45.29238095238095,
+    "diagnosis": "Cena 04 (densidade 45.3): depois de um miss de 1 quadro(s) a apar\u00eancia casou o gt 68 com o id 67 em vez de 66. Recortes de pedestres pr\u00f3ximos s\u00e3o parecidos; o cosseno ganha do IoU da \u00faltima caixa.",
+    "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_1.png"
+  },
+  {
+    "gt_id": 58,
+    "frame": 392,
+    "prev_frame": 368,
+    "gap": 24,
+    "pred_from": 407,
+    "pred_to": 437,
+    "scene": "02",
+    "camera": "static",
+    "occlusion": 29.0,
+    "density": 30.968333333333334,
+    "diagnosis": "Cena 02: o gt 58 some 24 quadros e volta com outro id. A janela de BPTT \u00e9 T=16 e max_age=20; se o buraco passa do que o estado da GRU ainda distingue, a track morre ou a apar\u00eancia pega outra pessoa.",
+    "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_2.png"
+  },
+  {
+    "gt_id": 3,
+    "frame": 495,
+    "prev_frame": 479,
+    "gap": 16,
+    "pred_from": 76,
+    "pred_to": 101,
+    "scene": "09",
+    "camera": "static",
+    "occlusion": 11.5,
+    "density": 10.142857142857142,
+    "diagnosis": "Cena 09: o gt 3 some 16 quadros e volta com outro id. A janela de BPTT \u00e9 T=16 e max_age=20; se o buraco passa do que o estado da GRU ainda distingue, a track morre ou a apar\u00eancia pega outra pessoa.",
+    "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_3.png"
+  }
+]
