@@ -9,7 +9,9 @@ from collections import defaultdict
 
 import numpy as np
 
-from src.association import greedy_match, hungarian_match, iou_cost
+import torch
+
+from src.association import cosine_cost, greedy_match, hungarian_match, iou_cost
 
 
 class Track:
@@ -27,6 +29,7 @@ class Track:
         self.time_since_update = 0
         self.confirmed = False
         self.state = None
+        self.embedding = None
 
 
 class Tracker:
@@ -40,26 +43,111 @@ class Tracker:
     """
 
     def __init__(self, iou_threshold=0.3, max_age=30, min_hits=3,
-                 matcher="hungarian", motion=None):
+                 matcher="hungarian", motion=None, appearance_threshold=0.5):
         self.iou_threshold = float(iou_threshold)
         self.max_age = int(max_age)
         self.min_hits = int(min_hits)
         self.matcher = matcher
         self.motion = motion
+        self.appearance_threshold = float(appearance_threshold)
         self.tracks = []
         self._next_id = 1
 
-    def _match(self, detections):
+    def _uses_appearance(self):
+        return self.motion is not None and hasattr(self.motion, "step")
+
+    def _queries(self, embeddings):
+        """
+        Recorte no espaço da memória: um passo de GRU a partir do estado
+        zero, para o cosseno comparar memória com consulta — não memória
+        com embedding cru do ResNet.
+        """
+
+        if hasattr(self.motion, "parameters"):
+            device = next(self.motion.parameters()).device
+        else:
+            device = "cpu"
+
+        tensor = torch.as_tensor(np.asarray(embeddings), device=device,
+                                 dtype=torch.float32)
+        if tensor.dim() == 1:
+            tensor = tensor.unsqueeze(0)
+        state = self.motion.init_state(len(tensor), device)
+        with torch.no_grad():
+            output, _ = self.motion.step(tensor, state)
+        if torch.is_tensor(output):
+            return output.detach().cpu().numpy().reshape(len(tensor), -1)
+        return np.asarray(output, dtype=np.float32).reshape(len(tensor), -1)
+
+    def _match(self, detections, embeddings=None):
         if not self.tracks or len(detections) == 0:
             return []
 
-        track_boxes = np.stack([track.box for track in self.tracks])
-        cost = iou_cost(track_boxes, detections)
-        gate = 1.0 - self.iou_threshold
         matcher = hungarian_match if self.matcher == "hungarian" else greedy_match
-        return matcher(cost, gate)
 
-    def update(self, detections, frame):
+        if not self._uses_appearance() or embeddings is None:
+            track_boxes = np.stack([track.box for track in self.tracks])
+            return matcher(iou_cost(track_boxes, detections),
+                           1.0 - self.iou_threshold)
+
+        # Dois estágios: IoU nas tracks recém-vistas (não piorar o
+        # baseline), aparência só depois do miss.
+        live = [i for i, track in enumerate(self.tracks)
+                if track.time_since_update == 0]
+        lost = [i for i, track in enumerate(self.tracks)
+                if track.time_since_update > 0]
+
+        pairs = []
+        used_tracks, used_dets = set(), set()
+
+        if live:
+            boxes = np.stack([self.tracks[i].box for i in live])
+            for a, j in matcher(iou_cost(boxes, detections),
+                                1.0 - self.iou_threshold):
+                pairs.append((live[a], j))
+                used_tracks.add(live[a])
+                used_dets.add(j)
+
+        remain_tracks = [i for i in lost if i not in used_tracks]
+        remain_dets = [j for j in range(len(detections)) if j not in used_dets]
+        if not remain_tracks or not remain_dets:
+            return pairs
+
+        queries = self._queries(embeddings[remain_dets])
+        dim = queries.shape[1]
+        memory = np.stack([
+            self.tracks[i].embedding if self.tracks[i].embedding is not None
+            else np.zeros(dim, dtype=np.float64)
+            for i in remain_tracks
+        ])
+        for a, b in matcher(cosine_cost(memory, queries),
+                            self.appearance_threshold):
+            pairs.append((remain_tracks[a], remain_dets[b]))
+        return pairs
+
+    def _update_appearance(self, track, embedding):
+        if embedding is None or not self._uses_appearance():
+            return
+
+        vector = np.asarray(embedding, dtype=np.float32).reshape(-1)
+        if hasattr(self.motion, "parameters"):
+            device = next(self.motion.parameters()).device
+        else:
+            device = "cpu"
+
+        tensor = torch.as_tensor(vector, device=device)
+        state = track.state
+        if state is None:
+            state = self.motion.init_state(1, device)
+
+        with torch.no_grad():
+            output, track.state = self.motion.step(tensor, state)
+        if torch.is_tensor(output):
+            track.embedding = output.detach().cpu().numpy().reshape(-1)
+        else:
+            track.embedding = np.asarray(output, dtype=np.float32).reshape(-1)
+
+    def update(self, detections, frame, embeddings=None):
         """
         Um quadro: associar à última caixa observada, atualizar, nascer, morrer.
 
@@ -73,7 +161,14 @@ class Tracker:
         else:
             boxes = boxes.reshape(-1, 4)
 
-        pairs = self._match(boxes)
+        if embeddings is not None:
+            embeddings = np.asarray(embeddings, dtype=np.float64)
+            if embeddings.size == 0:
+                embeddings = None
+            else:
+                embeddings = embeddings.reshape(len(boxes), -1)
+
+        pairs = self._match(boxes, embeddings)
         matched_tracks = {i for i, _ in pairs}
         matched_dets = {j for _, j in pairs}
         emitted = []
@@ -90,6 +185,8 @@ class Tracker:
             track.box = boxes[j].copy()
             track.time_since_update = 0
             track.last_frame = int(frame)
+            if embeddings is not None:
+                self._update_appearance(track, embeddings[j])
             if track.hits >= self.min_hits:
                 track.confirmed = True
                 emitted.append((int(frame), track.track_id,
@@ -115,6 +212,8 @@ class Tracker:
                 continue
             track = Track(self._next_id, box, frame)
             self._next_id += 1
+            if embeddings is not None:
+                self._update_appearance(track, embeddings[j])
             if track.hits >= self.min_hits:
                 track.confirmed = True
                 emitted.append((int(frame), track.track_id,
@@ -124,22 +223,26 @@ class Tracker:
 
         return emitted
 
-    def run(self, sequence):
+    def run(self, sequence, embeddings=None):
         """
         Sequência inteira -> pred_tracks no formato que src/metrics.py consome.
 
         Aceita linhas (frame, x, y, w, h[, score]) ou (frame, id, x, y, w, h, ...).
+        `embeddings` alinha 1:1 com `sequence` quando a Trilha B está ligada.
         """
 
         by_frame = defaultdict(list)
+        emb_by_frame = defaultdict(list)
 
-        for row in sequence:
+        for index, row in enumerate(sequence):
             frame = int(row[0])
             if len(row) == 6:
                 box = row[1:5]
             else:
                 box = row[2:6]
             by_frame[frame].append(box)
+            if embeddings is not None:
+                emb_by_frame[frame].append(embeddings[index])
 
         if not by_frame:
             return []
@@ -147,7 +250,9 @@ class Tracker:
         tracks = []
 
         for frame in range(min(by_frame), max(by_frame) + 1):
-            tracks.extend(self.update(by_frame.get(frame, []), frame))
+            frame_emb = emb_by_frame.get(frame) if embeddings is not None else None
+            tracks.extend(self.update(by_frame.get(frame, []), frame,
+                                      embeddings=frame_emb))
 
         return tracks
 

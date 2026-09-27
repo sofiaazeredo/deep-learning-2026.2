@@ -49,7 +49,10 @@ def hungarian_match(cost, threshold):
     if cost.size == 0:
         return []
 
-    rows, cols = linear_sum_assignment(cost)
+    # SciPy não aceita inf; o portão marca pares inválidos com um
+    # custo grande, e o limiar ainda os rejeita.
+    finite = np.where(np.isfinite(cost), cost, 1e6)
+    rows, cols = linear_sum_assignment(finite)
 
     return [(int(i), int(j))
             for i, j in zip(rows, cols)
@@ -70,13 +73,45 @@ def cosine_cost(track_embeddings, detection_embeddings):
     Custo de aparência: 1 - similaridade de cosseno (Trilha B).
     """
 
-    raise NotImplementedError
+    tracks = np.asarray(track_embeddings, dtype=np.float64)
+    dets = np.asarray(detection_embeddings, dtype=np.float64)
+
+    if tracks.ndim == 1:
+        tracks = tracks.reshape(1, -1)
+    if dets.ndim == 1:
+        dets = dets.reshape(1, -1)
+    if tracks.size == 0 or dets.size == 0:
+        return np.zeros((len(tracks), len(dets)))
+
+    track_norm = np.linalg.norm(tracks, axis=1, keepdims=True)
+    det_norm = np.linalg.norm(dets, axis=1, keepdims=True)
+    tracks = np.divide(tracks, track_norm, out=np.zeros_like(tracks),
+                       where=track_norm > 0)
+    dets = np.divide(dets, det_norm, out=np.zeros_like(dets),
+                     where=det_norm > 0)
+
+    return 1.0 - tracks @ dets.T
 
 
-def gate(cost, iou, iou_gate=0.3, sigma=None):
+def gate(cost, iou, iou_gate=0.3, sigma=None, row_mask=None):
     """
     Portão de associação. Geométrico por cima da aparência na Trilha B;
     adaptativo pela incerteza prevista quando o modelo da Trilha A emite sigma.
+
+    `row_mask` (n_tracks,) True aplica o portão nessa track. Sem máscara,
+    aplica em todas. Pares abaixo do IoU ganham custo infinito.
     """
 
-    raise NotImplementedError
+    gated = np.array(cost, dtype=np.float64, copy=True)
+    overlap = np.asarray(iou, dtype=np.float64)
+    blocked = overlap < iou_gate
+
+    if row_mask is not None:
+        blocked = blocked & np.asarray(row_mask, dtype=bool).reshape(-1, 1)
+
+    if sigma is not None:
+        scale = np.asarray(sigma, dtype=np.float64).reshape(-1, 1)
+        blocked = blocked & (overlap < iou_gate * np.clip(scale, 0.5, 2.0))
+
+    gated[blocked] = np.inf
+    return gated

@@ -9,7 +9,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import numpy as np
+
 from src.tracker import Tracker
+
+
+class FakeAppearance:
+    cell = "gru"
+
+    def init_state(self, batch=1, device="cpu"):
+        return None
+
+    def step(self, embedding, state):
+        return embedding, embedding
 
 
 def boxes_at(frames, x, y):
@@ -67,6 +79,37 @@ def test_min_hits_drops_unconfirmed_frames():
 
     assert [row[0] for row in tracks] == [3, 4, 5]
     assert len({row[1] for row in tracks}) == 1
+
+
+def test_appearance_keeps_ids_after_occlusion_far_from_last_box():
+    # Depois do buraco as pessoas reaparecem no lugar uma da outra.
+    # IoU puro trocaria os ids; a aparência (portão desligado no miss)
+    # segue o embedding.
+    tracker = Tracker(iou_threshold=0.3, max_age=5, min_hits=1,
+                      matcher="hungarian", motion=FakeAppearance(),
+                      appearance_threshold=0.5)
+    detections = [(1, 0.0, 0.0, 10.0, 10.0, 1.0),
+                  (1, 80.0, 0.0, 10.0, 10.0, 1.0),
+                  (4, 80.0, 0.0, 10.0, 10.0, 1.0),
+                  (4, 0.0, 0.0, 10.0, 10.0, 1.0)]
+    embeddings = [
+        np.array([1.0, 0.0]),
+        np.array([0.0, 1.0]),
+        np.array([1.0, 0.0]),
+        np.array([0.0, 1.0]),
+    ]
+
+    tracks = tracker.run(detections, embeddings=embeddings)
+    first = {row[2:4]: row[1] for row in tracks if row[0] == 1}
+    later = {row[2:4]: row[1] for row in tracks if row[0] == 4}
+
+    assert first[(0.0, 0.0)] == later[(80.0, 0.0)]
+    assert first[(80.0, 0.0)] == later[(0.0, 0.0)]
+
+    iou_only = Tracker(iou_threshold=0.3, max_age=5, min_hits=1).run(detections)
+    first_iou = {row[2:4]: row[1] for row in iou_only if row[0] == 1}
+    later_iou = {row[2:4]: row[1] for row in iou_only if row[0] == 4}
+    assert first_iou[(0.0, 0.0)] == later_iou[(0.0, 0.0)]
 
 
 def test_miss_resets_consecutive_hits_before_confirmation():

@@ -13,6 +13,8 @@ cima do que praticamente já viu. Pelo menos uma sequência inteira fica fora.
 
 from pathlib import Path
 
+import numpy as np
+
 SEQUENCE_ROOT = "data/MOT17"
 DETECTORS = ("DPM", "FRCNN", "SDP")
 
@@ -292,11 +294,60 @@ def split_report(splits, detector="SDP", root=SEQUENCE_ROOT):
     return lines
 
 
+def load_frame(sequence_path, frame, im_dir="img1", im_ext=".jpg"):
+    from PIL import Image
+
+    path = Path(sequence_path) / im_dir / f"{int(frame):06d}{im_ext}"
+    return np.asarray(Image.open(path).convert("RGB"))
+
+
 class TrackWindowDataset:
     """
     Trajetórias do ground truth fatiadas em janelas de T quadros, que é a
     unidade de BPTT truncado do treino da Parte 2 e do Eixo 1 da Parte 3.
     """
 
-    def __init__(self, sequences, window=16, stride=1):
-        raise NotImplementedError
+    def __init__(self, sequences, window=16, stride=1, detector="SDP",
+                 root=SEQUENCE_ROOT):
+        if window < 2:
+            raise ValueError("window precisa ser >= 2")
+        if set(scene_id(name) for name in sequences) & set(TEST_SCENES):
+            raise ValueError("TrackWindowDataset não pode ver o split de teste")
+
+        self.window = int(window)
+        self.stride = int(stride)
+        self.items = []
+
+        for name in sequences:
+            info, gt, _ = load_sequence(name, detector=detector, root=root)
+            by_frame = {}
+            for row in gt:
+                by_frame.setdefault(int(row[0]), []).append(row)
+
+            if not by_frame:
+                continue
+
+            first, last = min(by_frame), max(by_frame)
+
+            for start in range(first, last - window + 2, self.stride):
+                identities = {}
+                for frame in range(start, start + window):
+                    for row in by_frame.get(frame, []):
+                        identities.setdefault(int(row[1]), []).append(
+                            (frame, (float(row[2]), float(row[3]),
+                                     float(row[4]), float(row[5]))))
+                if len(identities) < 2:
+                    continue
+                self.items.append({
+                    "scene": info["scene"],
+                    "path": info["path"],
+                    "start": start,
+                    "window": window,
+                    "identities": identities,
+                })
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, index):
+        return self.items[index]

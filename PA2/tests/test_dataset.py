@@ -13,6 +13,7 @@ from src.dataset import (
     CAMERA,
     TEST_SCENES,
     TRAIN_SCENES,
+    TrackWindowDataset,
     create_splits,
     median_occlusion,
     read_mot_file,
@@ -79,6 +80,33 @@ def test_scene_id_and_camera():
     assert CAMERA["09"] == "static" and CAMERA["11"] == "moving"
 
 
+def test_track_window_dataset_length_and_no_test_scene(tmp_path):
+    root = tmp_path / "MOT17" / "train" / "MOT17-02-SDP"
+    (root / "gt").mkdir(parents=True)
+    (root / "det").mkdir()
+    (root / "seqinfo.ini").write_text(
+        "name=MOT17-02-SDP\nframeRate=30\nseqLength=8\n"
+        "imWidth=64\nimHeight=64\nimDir=img1\nimExt=.jpg\n")
+    lines = []
+    for t in range(1, 9):
+        lines.append(f"{t},1,0,0,10,10,1,1,1.0")
+        lines.append(f"{t},2,20,0,10,10,1,1,1.0")
+    (root / "gt" / "gt.txt").write_text("\n".join(lines) + "\n")
+    (root / "det" / "det.txt").write_text("1,-1,0,0,10,10,1\n")
+
+    dataset = TrackWindowDataset(["02"], window=4, stride=2, root=tmp_path / "MOT17")
+
+    assert len(dataset) == 3
+    assert dataset[0]["window"] == 4
+    assert set(dataset[0]["identities"]) == {1, 2}
+
+    try:
+        TrackWindowDataset(["09"], window=4, root=tmp_path / "MOT17")
+    except ValueError:
+        return
+    raise AssertionError("teste não pode entrar no dataset de janelas")
+
+
 def test_median_occlusion_from_visibility_runs():
     # identidade 1: 3 quadros ocluídos, depois 2. Mediana 2.5.
     tracks = [(t, 1, 0, 0, 10, 10, 1, 1, 0.1 if t < 3 or t >= 5 else 1.0)
@@ -94,6 +122,10 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         test_read_mot_file_types(Path(tmp))
         test_read_det_file_without_class(Path(tmp))
+        test_track_window_dataset_length_and_no_test_scene(Path(tmp))
+        print("ok  test_read_mot_file_types")
+        print("ok  test_read_det_file_without_class")
+        print("ok  test_track_window_dataset_length_and_no_test_scene")
 
     for test in (test_split_ground_truth_keeps_only_real_pedestrians,
                  test_create_splits_is_fixed_and_ignores_seed,
@@ -102,9 +134,6 @@ def main():
                  test_median_occlusion_from_visibility_runs):
         test()
         print(f"ok  {test.__name__}")
-
-    print("ok  test_read_mot_file_types")
-    print("ok  test_read_det_file_without_class")
 
 
 if __name__ == "__main__":

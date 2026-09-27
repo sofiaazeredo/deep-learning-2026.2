@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
-from src.association import greedy_match, hungarian_match, iou_cost
+from src.association import cosine_cost, gate, greedy_match, hungarian_match, iou_cost
 
 
 def test_iou_cost_of_identical_boxes_is_zero():
@@ -40,6 +40,26 @@ def test_cost_gate_rejects_pairs():
 
     assert greedy_match(cost, threshold=0.3) == [(0, 1), (1, 0)]
     assert hungarian_match(cost, threshold=0.05) == []
+
+
+def test_cosine_cost_of_parallel_vectors_is_zero():
+    tracks = np.array([[1.0, 0.0], [0.0, 1.0]])
+    dets = np.array([[2.0, 0.0], [0.0, 3.0]])
+
+    cost = cosine_cost(tracks, dets)
+
+    assert np.allclose(np.diag(cost), 0.0)
+    assert cost[0, 1] == 1.0
+
+
+def test_gate_blocks_low_iou_only_on_masked_rows():
+    cost = np.array([[0.1, 0.2], [0.1, 0.2]])
+    iou = np.array([[0.9, 0.0], [0.9, 0.0]])
+
+    gated = gate(cost, iou, iou_gate=0.3, row_mask=[True, False])
+
+    assert np.isinf(gated[0, 1])
+    assert gated[1, 1] == 0.2
 
 
 def test_empty_cost():

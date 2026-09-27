@@ -35,6 +35,21 @@ escondido some no meio de sete identidades perfeitas); reduzimos para 3
 objetos para o botão ficar visível. Quem quebra de verdade o baseline é
 a velocidade, não o número de elipses lentas.
 
+### Parte 2 — Trilha B
+
+A IA implementou o encoder congelado, o cache de embeddings, o GRU, a
+perda InfoNCE, o BPTT truncado e o casamento por cosseno no tracker
+já existente. A fonte de detecções e as regras IoU / min_hits / max_age
+ficaram congeladas.
+
+Três bugs no primeiro rascunho: a perda contrastiva olhava um quadro
+de cada vez (cada id aparece uma vez, perda zero); o InfoNCE era um
+laço Python e cada época levava minutos; o cosseno comparava a
+memória da GRU com o embedding cru do ResNet e o limiar 0,8 aceitava
+quase qualquer par (IDF1 0,12). A associação ficou em dois estágios
+(IoU nas tracks vivas, aparência só depois do miss) e a consulta
+passa por um passo de GRU a partir do estado zero.
+
 ### Erros da IA que tivemos que corrigir
 
 - O gráfico do descolamento saiu ordenado por número da cena (02…13),

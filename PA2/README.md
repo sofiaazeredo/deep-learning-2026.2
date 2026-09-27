@@ -25,7 +25,8 @@ caixas e identidades anotadas quadro a quadro.
 | 0 — sintético, piso fácil | 5 elipses, speed 0,5, sem oclusão | 0,989 | 0 | 0 |
 | 1 — baseline por quadro (teste 09+11) | SDP, Hungarian, IoU 0,2, min_hits=2, max_age=20 | 0,570 | 167 | 29,5 |
 | 1 — as 7 sequências (figura) | mesma regra | 0,537 | 1674 | 78,0 |
-| 2 — memória temporal | (trilha a definir) | — | — | — |
+| 2 — memória temporal (teste 09+11) | Trilha B, GRU, ResNet18 congelada, InfoNCE | 0,552 | 216 | 64,5 |
+| 2 — as 7 sequências | mesma regra | 0,510 | 1930 | 170,4 |
 
 Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 
@@ -35,7 +36,7 @@ Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 - **split por sequência — teste = 09 + 11; treino = 02, 04, 05, 10, 13.** Fixo, independente da seed. 09 é rua estática que o treino não viu; 11 é o único indoor (shopping, câmera móvel). O treino ainda tem as duas câmeras, o extremo de densidade (04) e o de oclusão (02 = 29, 13 = 3).
 - **eixo da figura — duração de oclusão:** mediana das corridas com `visibility < 0,25`. Ordem: 13 (3) → 05 (5) → 10 (7) → 11 (9) → 09 (12) → 04 (20) → 02 (29). É o campo do gt, não buraco de quadro.
 - **associação:** última caixa observada vs. detecção; Hungarian (guloso fica 0,532 nas 7, com 1906 switches contra 1674); limiar, `min_hits` e `max_age` varridos só no treino (melhor IDF1 0,523 em IoU 0,2 / min_hits=2 / max_age=20). `min_hits` é consecutivo; quadros antes da confirmação e quadros sem match não saem.
-- **trilha da Parte 2** — A (RNN como modelo de movimento) ou B (RNN como memória de aparência);
+- **trilha da Parte 2 — B, RNN como memória de aparência.** O baseline quebra quando a pessoa some e reaparece longe da última caixa; um modelo de movimento (Trilha A) não alcança isso. O GRU agrega o embedding do recorte; o portão de IoU só vale no quadro em que a track acabou de ser vista.
 - **eixo da Parte 3** — célula recorrente, regime de treino, o que entra na recorrência, ou direção do contexto;
 - **estresse da Parte 5** — queda de taxa de quadros ou qualidade do detector.
 
@@ -81,7 +82,7 @@ python scripts/prepare_mot17.py --root data/MOT17   # confere o layout e imprime
 ## Um comando que treina
 
 ```bash
-python scripts/train_temporal.py --track a --cell gru --window 16 --seed 42 --name modelo_final
+python scripts/train_temporal.py --track b --cell gru --window 16 --seed 42 --name modelo_final
 ```
 
 ## Um comando que avalia
@@ -146,7 +147,7 @@ python scripts/evaluate_tracking.py --tracks experiments/results/baseline_tracks
 python scripts/plot_baseline_results.py --order-by occlusion
 
 # Parte 2 — memória temporal (a fonte de detecções fica congelada daqui em diante)
-python scripts/train_temporal.py --track a --cell gru --window 16 --seed 42 --name temporal
+python scripts/train_temporal.py --track b --cell gru --window 16 --stride 8 --seed 42 --name temporal
 python scripts/run_tracker.py --checkpoint checkpoints/temporal_best.pt --name temporal
 python scripts/evaluate_tracking.py --tracks experiments/results/temporal_tracks.csv --name temporal
 
@@ -209,8 +210,12 @@ tests/                testes de cada módulo de src/, rodados com pytest
   test_metrics.py     os três casos à mão + AP@0.5 e drop de distractor
   test_dataset.py     parse MOT, pedestres vs distractores, split fixo
   test_detection.py   NMS contra resultado conhecido
-  test_association.py custo IoU, guloso e Hungarian
-  test_tracker.py     persistência, min_hits, morte, sem coasting
+  test_association.py custo IoU, cosseno, guloso e Hungarian
+  test_tracker.py     persistência, min_hits, morte, re-id por aparência
+  test_appearance.py  recorte preso à imagem, encoder L2 congelado
+  test_model.py       passo do AppearanceRNN
+  test_losses.py      InfoNCE: mesmo id mais perto que id diferente
+  test_training.py    BPTT truncado reduz a perda numa janela-brinquedo
   test_baseline_synthetic.py  piso fácil IDF1 ≈ 1; oclusão longa dói
 experiments/
   results/            um CSV por execução + os sumários das ablações
@@ -263,5 +268,17 @@ métrica, split, resolução/escala, e o que ficou fora.)
   ~0,84 assim que há buraco; alongar o buraco quase não piora o global
   porque o gt some nesses quadros e as outras duas identidades pesam mais.
   Figura: `experiments/figures/synthetic_sweep.png`.
+- **Trilha B (Parte 2).** Encoder ImageNet ResNet18 congelado, recorte
+  128×64, projeção determinística 128-d L2. Cache em
+  `data/MOT17/cache/sdp_resnet18/` (gt no treino, det nas 7 cenas). GRU
+  hidden 128, teacher forcing, InfoNCE na janela T=16 (stride 8). Dois
+  estágios: tracks recém-vistas casam por IoU (igual ao baseline);
+  depois de um miss, 1 − cosseno entre a memória da GRU e a consulta
+  (um passo a partir do estado zero), limiar 0,5. Sem isso o
+  reaparecimento longe da caixa velha continua bloqueado — e casar
+  aparência em todo quadro derruba o IDF1 para ~0,12. No teste fica
+  abaixo do baseline (0,552 vs 0,570): ganha em 10 e 13 (câmera
+  móvel), perde nas cenas densas 02 e 04, onde o ResNet confunde
+  pedestres parecidos. Kalman e Trilha A ficam de fora.
 - **MOTA.** Opcional e reportada à parte: com o detector congelado, os termos de
   FP/FN quase não variam entre as configurações e ela esconde o que muda.
