@@ -79,6 +79,17 @@ Decisão que a IA não tomou sozinha: a correção (IoU da última caixa
 depois do miss, sugerida pela 04). Funcionou — o diagnóstico estava
 certo nas cenas densas.
 
+### Parte 5 — qualidade do detector
+
+A IA ligou o `degrade` já testado no sintético ao `det.txt` do SDP
+(`degrade_detections`), embedou as caixas novas (o cache do SDP não
+serve) e comparou o modelo final com o baseline nas mesmas
+detecções. Os números saíram do script, ~5 min na 3050.
+
+Decisão que a IA não tomou sozinha: o eixo (detector, não taxa de
+quadros). O temporal amplifica a falha — a resposta não foi
+inventada para ficar bonita.
+
 ### Erros da IA que tivemos que corrigir
 
 - O gráfico do descolamento saiu ordenado por número da cena (02…13),

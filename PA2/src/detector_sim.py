@@ -113,6 +113,21 @@ def degrade(
             for i in order]
 
 
+def degrade_detections(dets, drop_rate=0.0, coord_noise=0.0,
+                       false_positive_rate=0.0, image_size=None, seed=None):
+    """
+    Igual ao `degrade`, mas a entrada já é (frame, x, y, w, h, score) — o
+    formato do det.txt depois do NMS. A Parte 5 estraga o SDP, não o gt.
+    """
+
+    boxes = [(int(row[0]), index + 1, float(row[1]), float(row[2]),
+              float(row[3]), float(row[4]))
+             for index, row in enumerate(dets)]
+    return degrade(boxes, drop_rate=drop_rate, coord_noise=coord_noise,
+                   false_positive_rate=false_positive_rate,
+                   image_size=image_size, seed=seed)
+
+
 # As três intensidades do teste de estresse da Parte 5 (e da varredura do
 # sintético). Valores iniciais — calibrar contra o que o detector público
 # do MOT17 erra de fato.

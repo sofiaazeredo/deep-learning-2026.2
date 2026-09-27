@@ -183,3 +183,30 @@ def cache_sequence_embeddings(scene, encoder, kind="gt", detector="SDP",
 
     _save_cache(path, frames, keys, vectors)
     return load_embedding_cache(path)
+
+
+@torch.no_grad()
+def embed_detections(scene, dets, encoder, device="cpu", batch_size=64,
+                     root="data/MOT17"):
+    """
+    Recorta e embeda uma lista (frame, x, y, w, h, ...) na ordem dada.
+    Usado na Parte 5: as caixas degradadas não cabem no cache do SDP.
+    """
+
+    info, _, _ = load_sequence(scene, root=root)
+    encoder = encoder.to(device)
+    encoder.eval()
+    vectors = [None] * len(dets)
+    by_frame = {}
+    for index, row in enumerate(dets):
+        by_frame.setdefault(int(row[0]), []).append((index, row[1:5]))
+
+    for frame, items in by_frame.items():
+        image = load_frame(info["path"], frame, info["im_dir"], info["im_ext"])
+        for start in range(0, len(items), batch_size):
+            chunk = items[start:start + batch_size]
+            crops = [crop(image, box) for _, box in chunk]
+            embeds = encoder.embed(crops, device=device).cpu().numpy()
+            for (index, _), vector in zip(chunk, embeds):
+                vectors[index] = vector
+    return vectors

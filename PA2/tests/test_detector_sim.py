@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
-from src.detector_sim import degrade, INTENSITIES
+from src.detector_sim import INTENSITIES, degrade, degrade_detections
 from src.synthetic import make_sequence
 
 IMAGE_SIZE = (128, 128)
@@ -177,6 +177,16 @@ def test_runs_on_synthetic_ground_truth():
 
     assert detections
     assert {d[0] for d in detections} <= {row[0] for row in tracks}
+
+
+def test_degrade_detections_reads_xywh_not_id():
+    dets = [(1, 10.0, 20.0, 8.0, 12.0, 0.9),
+            (1, 40.0, 20.0, 8.0, 12.0, 0.8)]
+    out = degrade_detections(dets, seed=0)
+    assert sorted((row[0], *row[1:5]) for row in out) == [
+        (1, 10.0, 20.0, 8.0, 12.0),
+        (1, 40.0, 20.0, 8.0, 12.0),
+    ]
 
 
 def test_intensities_grow_from_light_to_strong():

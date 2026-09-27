@@ -31,6 +31,11 @@ caixas e identidades anotadas quadro a quadro.
 | 3 — Eixo 3, as 7 | geometria (melhor no agregado), 3 seeds | 0,532 ± 0,013 | 1609 ± 164 | 137 ± 36 |
 | 4 — correção (teste 09+11) | mesma GRU, IoU da última caixa depois do miss | 0,568 | 153 | 22,5 |
 | 4 — as 7 | mesma regra | 0,546 | 1383 | 63,3 |
+| 5 — detector leve (teste) | AP 0,582; temporal vs baseline | 0,464 vs 0,526 | 208 vs 189 | — |
+| 5 — detector médio (teste) | AP 0,430 | 0,318 vs 0,347 | 351 vs 294 | — |
+| 5 — detector forte (teste) | AP 0,197 | 0,170 vs 0,180 | 574 vs 510 | — |
+
+O temporal **amplifica** a falha do detector: no leve o IDF1 cai 21% (0,568 → 0,464) enquanto o AP cai 16% e o baseline só 8%. Figura: `experiments/figures/stress_detector.png`.
 
 Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 
@@ -43,7 +48,14 @@ Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 - **trilha da Parte 2 — B, RNN como memória de aparência.** O baseline quebra quando a pessoa some e reaparece longe da última caixa; um modelo de movimento (Trilha A) não alcança isso. O GRU agrega o embedding do recorte; o portão de IoU só vale no quadro em que a track acabou de ser vista.
 - **eixo da Parte 3 — o que entra na recorrência.** Só geometria, só aparência, ou os dois. 3 seeds (42, 123, 7). No teste a aparência fica à frente (0,554 ± 0,001); nas sete a geometria ganha (0,532 ± 0,013) porque segura a cena densa 04. Os dois juntos não pegam o melhor de cada um.
 - **correção da Parte 4 — `miss_prefer_iou`.** A GRU não esquece (o gradiente em k=14 ainda é ~90% do de k=0); o que mata a identidade é o casamento depois do miss. Preferir o IoU da última caixa nas tracks perdidas, e só então o cosseno, sobe o teste de 0,552 para 0,568 e as sete de 0,510 para 0,546 — acima do baseline (0,537).
-- **estresse da Parte 5** — queda de taxa de quadros ou qualidade do detector.
+- **estresse da Parte 5 — qualidade do detector.** Sem retreinar. O SDP
+  público é descartado / ruidoso / injetado de FP em 3 intensidades
+  (`leve` 10%/2%/5%, `média` 25%/5%/15%, `forte` 50%/10%/30%). O
+  temporal (GRU + `miss_prefer_iou`) **amplifica** a falha: no leve o
+  IDF1 do teste cai 21% e o do baseline 8%, com AP caindo 16%. Na 04
+  densa o cosseno casa FP e recortes deslocados; o baseline que só
+  olha IoU sofre menos. Em `forte` os dois colapsam junto com o AP
+  (~0,17). Queda de taxa de quadros ficou de fora.
 
 ---
 
@@ -175,9 +187,8 @@ python scripts/failure_gallery.py --n-failures 3 --name failures
 python scripts/memory_horizon.py --mode both --name memory_horizon
 python scripts/failure_correction.py --name correcao
 
-# Parte 5 — teste de estresse (escolher UM)
-python scripts/stress_test.py --mode framerate
-python scripts/stress_test.py --mode detector
+# Parte 5 — qualidade do detector (sem retreinar, modelo final + correção)
+python scripts/stress_test.py --mode detector --name stress_detector
 ```
 
 A partir da Parte 2 os scripts leem `experiments/results/best_model.json` e
@@ -312,5 +323,15 @@ métrica, split, resolução/escala, e o que ficou fora.)
   1930 → 1383 switches, passando o baseline. O ganho grande é 02 e
   04; 10 e 13 mal andam — oclusão longa + câmera móvel não se resolve
   com a caixa velha.
+- **Estresse do detector (Parte 5).** Sem retreinar, em cima da GRU
+  seed 42 com `miss_prefer_iou`. O `degrade` da Parte 0.2 agora
+  também aceita o `det.txt` (`degrade_detections`): mesma semente por
+  cena, então o descarte é aninhado (forte ⊂ média ⊂ leve). mAP e
+  IDF1 no mesmo gráfico. No SDP limpo o temporal ainda ganha nas sete
+  (0,546 vs 0,537). Qualquer sujeira inverte: o cosseno trata um
+  recorte ruidoso ou um FP como reaparecimento, e o IDF1 cai mais que
+  o AP e mais que o baseline. A memória de aparência assume que a
+  caixa que chegou é uma pessoa; o detector que a inventou quebra
+  essa premissa.
 - **MOTA.** Opcional e reportada à parte: com o detector congelado, os termos de
   FP/FN quase não variam entre as configurações e ela esconde o que muda.
