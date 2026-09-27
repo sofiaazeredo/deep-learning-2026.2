@@ -22,27 +22,22 @@ caixas e identidades anotadas quadro a quadro.
 
 | Parte | Configuração | IDF1 | ID switches | Erro de contagem |
 |---|---|---|---|---|
-| 0 — sintético, piso fácil | associação ingênua | — | — | — |
-| 1 — baseline por quadro | IoU t vs. t−1 | — | — | — |
+| 0 — sintético, piso fácil | 5 elipses, speed 0,5, sem oclusão | 0,989 | 0 | 0 |
+| 1 — baseline por quadro (teste 09+11) | SDP, Hungarian, IoU 0,2, min_hits=2, max_age=20 | 0,570 | 167 | 29,5 |
+| 1 — as 7 sequências (figura) | mesma regra | 0,537 | 1674 | 78,0 |
 | 2 — memória temporal | (trilha a definir) | — | — | — |
 
-(preencher conforme as execuções saírem; todo número aqui tem que ser
-reproduzível pelos comandos da seção "Reproduzir cada parte".)
+Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 
-**Decisões a registrar aqui**, porque o enunciado cobra a justificativa:
+**Decisões congeladas na Parte 1:**
 
-- **fonte de detecções** — qual dos três detectores públicos (DPM, FRCNN, SDP)
-  é a fonte padrão do resto do PA, e por quê;
-- **split por sequência** — qual sequência inteira ficou fora e sob que
-  critério (câmera parada vs. móvel, densidade, ponto de vista);
-- **trilha da Parte 2** — A (RNN como modelo de movimento) ou B (RNN como
-  memória de aparência);
-- **eixo da Parte 3** — célula recorrente, regime de treino, o que entra na
-  recorrência, ou direção do contexto;
-- **estresse da Parte 5** — queda de taxa de quadros ou qualidade do detector;
-- **regra de associação e gestão de nascimento/morte de tracks** — limiar de
-  IoU, `max_age`, `min_hits`, guloso ou Hungarian. Como no PA1, regras
-  diferentes dão números diferentes.
+- **fonte de detecções — SDP.** AP@0,5 / recall depois do nosso NMS, nas 7 cenas: DPM 0,356 / 0,365; FRCNN 0,541 / 0,543; SDP 0,653 / 0,655. O mesmo tracker (regra congelada) dá IDF1 0,310 (DPM), 0,487 (FRCNN), 0,537 (SDP). Só em 13 o FRCNN ganha um pouco em AP (0,582 vs 0,573); no resto o SDP é melhor. Congelado daqui em diante.
+- **split por sequência — teste = 09 + 11; treino = 02, 04, 05, 10, 13.** Fixo, independente da seed. 09 é rua estática que o treino não viu; 11 é o único indoor (shopping, câmera móvel). O treino ainda tem as duas câmeras, o extremo de densidade (04) e o de oclusão (02 = 29, 13 = 3).
+- **eixo da figura — duração de oclusão:** mediana das corridas com `visibility < 0,25`. Ordem: 13 (3) → 05 (5) → 10 (7) → 11 (9) → 09 (12) → 04 (20) → 02 (29). É o campo do gt, não buraco de quadro.
+- **associação:** última caixa observada vs. detecção; Hungarian (guloso fica 0,532 nas 7, com 1906 switches contra 1674); limiar, `min_hits` e `max_age` varridos só no treino (melhor IDF1 0,523 em IoU 0,2 / min_hits=2 / max_age=20). `min_hits` é consecutivo; quadros antes da confirmação e quadros sem match não saem.
+- **trilha da Parte 2** — A (RNN como modelo de movimento) ou B (RNN como memória de aparência);
+- **eixo da Parte 3** — célula recorrente, regime de treino, o que entra na recorrência, ou direção do contexto;
+- **estresse da Parte 5** — queda de taxa de quadros ou qualidade do detector.
 
 ---
 
@@ -139,15 +134,16 @@ execuções compartilham exatamente o mesmo conjunto de teste.
 # Parte 0 — sintético (não precisa do MOT17)
 python scripts/generate_synthetic.py --name synthetic
 python tests/test_metrics.py                         # os três casos à mão
-python scripts/baseline_synthetic.py --sweep occlusion --name synthetic_sweep
+python scripts/baseline_synthetic.py --sweep all --name synthetic_sweep
 
 # Parte 1 — baseline por quadro
-python scripts/run_baseline.py --detector SDP --matcher hungarian --name baseline
-python scripts/evaluate_tracking.py --tracks experiments/results/baseline_tracks.csv --name baseline
-python scripts/plot_baseline_results.py --order-by density
-
-# Baseline permitido de comparação (Kalman de velocidade constante)
-python scripts/compare_kalman.py --name kalman
+python scripts/prepare_mot17.py --measure
+python scripts/run_baseline.py --detector SDP --sweep --name baseline
+python scripts/run_baseline.py --detector SDP --matcher hungarian \
+  --iou-threshold 0.2 --min-hits 2 --max-age 20 --name baseline
+python scripts/evaluate_tracking.py --tracks experiments/results/baseline_tracks.csv \
+  --detector SDP --name baseline --split all
+python scripts/plot_baseline_results.py --order-by occlusion
 
 # Parte 2 — memória temporal (a fonte de detecções fica congelada daqui em diante)
 python scripts/train_temporal.py --track a --cell gru --window 16 --seed 42 --name temporal
@@ -210,7 +206,12 @@ scripts/              um script por etapa (ver acima)
 tests/                testes de cada módulo de src/, rodados com pytest
   test_synthetic.py   gerador: formato, determinismo, oclusão de N quadros
   test_detector_sim.py simulador de detector: descarte, ruído, falsos positivos
-  test_metrics.py     os três casos à mão da métrica (Parte 0.3)
+  test_metrics.py     os três casos à mão + AP@0.5 e drop de distractor
+  test_dataset.py     parse MOT, pedestres vs distractores, split fixo
+  test_detection.py   NMS contra resultado conhecido
+  test_association.py custo IoU, guloso e Hungarian
+  test_tracker.py     persistência, min_hits, morte, sem coasting
+  test_baseline_synthetic.py  piso fácil IDF1 ≈ 1; oclusão longa dói
 experiments/
   results/            um CSV por execução + os sumários das ablações
   figures/            todas as figuras da apresentação
@@ -231,8 +232,36 @@ métrica, split, resolução/escala, e o que ficou fora.)
   duas trajetórias que se cruzam contam switch à toa. Fragmentação só conta
   interrupção em quadro em que a identidade está no ground truth (oclusão
   total não fragmenta). Limiar de IoU 0,5, inclusivo.
-- **Split.** Por sequência, nunca por quadro: separar quadros aleatoriamente
-  põe o quadro t no treino e o t+1 na validação, e o modelo temporal seria
-  avaliado em cima do que já viu.
+- **Split.** Por sequência, nunca por quadro. Teste = 09 (estática, rua) e 11
+  (móvel, indoor); treino = 02, 04, 05, 10, 13. A tabela da Parte 1 no topo
+  usa o teste; a figura do descolamento usa as sete.
+- **GT e distractores.** Só `conf=1, class=1` entra no ground truth. Predição
+  com IoU ≥ 0,5 a uma caixa distractor (pessoa estática, reflexo, etc.) é
+  removida antes da métrica — protocolo MOT17, senão um acerto em pessoa
+  parada contaria como FP.
+- **AP de detecção.** `average_precision` em IoU 0,5, ranqueada por score,
+  implementação nossa. É o painel de cima da figura, não o IDF1.
+- **Associação / nascimento / morte.** Compara com a última caixa observada
+  (sem modelo de movimento). Hungarian default. Qualquer detecção sem par
+  nasce id novo. A track só é emitida depois de `min_hits` matches
+  consecutivos; os quadros anteriores são descartados (online). Sem match
+  não se escreve a caixa velha. A track morre depois de `max_age` misses.
+  Números (IoU 0,2, min_hits=2, max_age=20) vêm do sweep no treino; o
+  default do stub (0,3 / 3 / 30) fica em 0,514 de IDF1 no mesmo treino.
+- **NMS.** Greedy por score, IoU ≥ 0,5 suprime. `torchvision.ops.nms` não
+  entra. Faster R-CNN do torchvision está implementado e grava `det.txt`;
+  o laço de rastreamento só lê arquivo. Os números desta parte usam o
+  `det.txt` público do SDP — os quadros do MOT17.zip ainda não foram
+  extraídos.
+- **Piso fácil (Parte 0.4).** Mesmo tracker da Parte 1, detecções = caixas
+  verdadeiras sem id (`degrade` sem ruído). 5 elipses lentas, sem oclusão:
+  IDF1 = 0,989 (os dois primeiros quadros de cada track somem por
+  `min_hits=2`), zero switches, zero erro de contagem, 3 seeds. Densidade
+  sozinha não quebra (15 objetos lentos continuam em 0,989). Velocidade
+  quebra: 0,840 em 4 px/quadro e 0,447 em 8 — o deslocamento passa do
+  portão de IoU. Oclusão de um alvo entre 3 objetos derruba o IDF1 para
+  ~0,84 assim que há buraco; alongar o buraco quase não piora o global
+  porque o gt some nesses quadros e as outras duas identidades pesam mais.
+  Figura: `experiments/figures/synthetic_sweep.png`.
 - **MOTA.** Opcional e reportada à parte: com o detector congelado, os termos de
   FP/FN quase não variam entre as configurações e ela esconde o que muda.

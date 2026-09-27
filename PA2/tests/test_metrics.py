@@ -33,6 +33,8 @@ from src.metrics import (
     mota,
     unique_id_count_error,
     evaluate_sequence,
+    average_precision,
+    drop_distractor_matches,
 )
 
 T = 20   # quadros dos casos à mão
@@ -320,6 +322,41 @@ def test_accepts_extra_columns():
     gt = [(*row, 1.0, 1, 1.0) for row in GT]
 
     assert idf1(gt, GT)[0] == 1.0
+
+
+def test_average_precision_perfect_is_one():
+    detections = [(t, x, y, 10.0, 10.0, 0.9) for t, _, x, y, _, _ in GT]
+
+    ap, details = average_precision(GT, detections)
+
+    assert np.isclose(ap, 1.0)
+    assert np.isclose(details["recall"], 1.0)
+    assert details["fp"] == 0
+
+
+def test_average_precision_ranks_by_score():
+    gt = [(0, 1, 0.0, 0.0, 10.0, 10.0)]
+    detections = [
+        (0, 50.0, 50.0, 10.0, 10.0, 0.99),
+        (0, 0.0, 0.0, 10.0, 10.0, 0.1),
+    ]
+
+    ap, details = average_precision(gt, detections)
+
+    assert details["tp"] == 1 and details["fp"] == 1
+    assert 0.0 < ap < 1.0
+
+
+def test_drop_distractor_matches_removes_only_the_matched_prediction():
+    preds = [
+        (1, 10, 0.0, 0.0, 10.0, 10.0),
+        (1, 20, 50.0, 0.0, 10.0, 10.0),
+    ]
+    distractors = [(1, 99, 0.0, 0.0, 10.0, 10.0, 1, 7, 1.0)]
+
+    kept = drop_distractor_matches(preds, distractors)
+
+    assert [row[1] for row in kept] == [20]
 
 
 def main():

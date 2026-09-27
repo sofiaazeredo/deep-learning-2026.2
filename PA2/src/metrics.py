@@ -333,6 +333,116 @@ def unique_id_count_error(gt_tracks, pred_tracks):
     return abs(n_pred - n_gt)
 
 
+def _detection_box_score(row):
+    """
+    Aceita (frame, x, y, w, h, score) ou a linha MOT
+    (frame, id, x, y, w, h, conf, ...).
+    """
+
+    if len(row) == 6:
+        return int(row[0]), np.asarray(row[1:5], dtype=np.float64), float(row[5])
+
+    return int(row[0]), np.asarray(row[2:6], dtype=np.float64), float(row[6])
+
+
+def average_precision(gt_tracks, detections, threshold=0.5):
+    """
+    AP de detecção em IoU `threshold`, ranqueada por score, numa sequência.
+
+    Em cada quadro a predição de maior score casa com a melhor caixa
+    verdadeira ainda livre se o IoU passa do limiar. A curva é a
+    interpolação VOC (envelope de precisão). Devolve (ap, detalhes)
+    com recall no ponto de operação (todas as detecções).
+    """
+
+    gt = {}
+
+    for row in gt_tracks:
+        gt.setdefault(int(row[0]), []).append(np.asarray(row[2:6], dtype=np.float64))
+
+    n_gt = sum(len(boxes) for boxes in gt.values())
+    preds = [_detection_box_score(row) for row in detections]
+    preds.sort(key=lambda item: -item[2])
+
+    if n_gt == 0:
+        recall = 0.0 if preds else 1.0
+        ap = 1.0 if not preds else 0.0
+        return ap, {"recall": recall, "n_gt": 0, "n_pred": len(preds),
+                    "tp": 0, "fp": len(preds)}
+
+    if not preds:
+        return 0.0, {"recall": 0.0, "n_gt": n_gt, "n_pred": 0, "tp": 0, "fp": 0}
+
+    used = {frame: np.zeros(len(boxes), dtype=bool) for frame, boxes in gt.items()}
+    hits = []
+
+    for frame, box, _ in preds:
+        gt_boxes = gt.get(frame)
+        if gt_boxes is None or len(gt_boxes) == 0:
+            hits.append(0)
+            continue
+
+        iou = iou_matrix(box.reshape(1, 4), gt_boxes)[0]
+        best = int(np.argmax(iou))
+
+        if iou[best] >= threshold and not used[frame][best]:
+            used[frame][best] = True
+            hits.append(1)
+        else:
+            hits.append(0)
+
+    hits = np.asarray(hits, dtype=np.float64)
+    tp = np.cumsum(hits)
+    fp = np.cumsum(1.0 - hits)
+    recall = tp / n_gt
+    precision = tp / (tp + fp)
+
+    mpre = np.concatenate(([0.0], precision, [0.0]))
+    mrec = np.concatenate(([0.0], recall, [1.0]))
+
+    for i in range(len(mpre) - 2, -1, -1):
+        mpre[i] = max(mpre[i], mpre[i + 1])
+
+    change = np.where(mrec[1:] != mrec[:-1])[0]
+    ap = float(np.sum((mrec[change + 1] - mrec[change]) * mpre[change + 1]))
+    n_tp = int(tp[-1])
+
+    return ap, {"recall": float(n_tp / n_gt), "n_gt": n_gt,
+                "n_pred": len(preds), "tp": n_tp, "fp": int(fp[-1])}
+
+
+def drop_distractor_matches(pred_tracks, distractors, threshold=0.5):
+    """
+    Protocolo MOT17: predição casada (IoU >= limiar, um-para-um) a uma
+    caixa distractor (pessoa estática, reflexo, etc.) some antes da
+    métrica — não é TP nem FP.
+    """
+
+    dist_by = {}
+
+    for row in distractors:
+        dist_by.setdefault(int(row[0]), []).append(
+            np.asarray(row[2:6], dtype=np.float64))
+
+    pred_by = {}
+
+    for index, row in enumerate(pred_tracks):
+        pred_by.setdefault(int(row[0]), []).append(index)
+
+    drop = set()
+
+    for frame, indices in pred_by.items():
+        dist_boxes = dist_by.get(frame)
+        if not dist_boxes:
+            continue
+
+        pred_boxes = [pred_tracks[i][2:6] for i in indices]
+        for _, j in match_frame(dist_boxes, pred_boxes, threshold):
+            drop.add(indices[j])
+
+    return [row for i, row in enumerate(pred_tracks) if i not in drop]
+
+
 def evaluate_sequence(gt_tracks, pred_tracks, threshold=0.5):
     """
     Todas as métricas acima numa chamada, no formato que os scripts gravam em
