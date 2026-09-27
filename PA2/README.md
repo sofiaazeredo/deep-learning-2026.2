@@ -27,6 +27,8 @@ caixas e identidades anotadas quadro a quadro.
 | 1 — as 7 sequências (figura) | mesma regra | 0,537 | 1674 | 78,0 |
 | 2 — memória temporal (teste 09+11) | Trilha B, GRU, ResNet18 congelada, InfoNCE | 0,552 | 216 | 64,5 |
 | 2 — as 7 sequências | mesma regra | 0,510 | 1930 | 170,4 |
+| 3 — Eixo 3, teste 09+11 | aparência (melhor no teste), 3 seeds | 0,554 ± 0,001 | 215 ± 1 | 61,2 ± 4,0 |
+| 3 — Eixo 3, as 7 | geometria (melhor no agregado), 3 seeds | 0,532 ± 0,013 | 1609 ± 164 | 137 ± 36 |
 
 Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 
@@ -37,7 +39,7 @@ Todo número aqui sai dos comandos da seção "Reproduzir cada parte".
 - **eixo da figura — duração de oclusão:** mediana das corridas com `visibility < 0,25`. Ordem: 13 (3) → 05 (5) → 10 (7) → 11 (9) → 09 (12) → 04 (20) → 02 (29). É o campo do gt, não buraco de quadro.
 - **associação:** última caixa observada vs. detecção; Hungarian (guloso fica 0,532 nas 7, com 1906 switches contra 1674); limiar, `min_hits` e `max_age` varridos só no treino (melhor IDF1 0,523 em IoU 0,2 / min_hits=2 / max_age=20). `min_hits` é consecutivo; quadros antes da confirmação e quadros sem match não saem.
 - **trilha da Parte 2 — B, RNN como memória de aparência.** O baseline quebra quando a pessoa some e reaparece longe da última caixa; um modelo de movimento (Trilha A) não alcança isso. O GRU agrega o embedding do recorte; o portão de IoU só vale no quadro em que a track acabou de ser vista.
-- **eixo da Parte 3** — célula recorrente, regime de treino, o que entra na recorrência, ou direção do contexto;
+- **eixo da Parte 3 — o que entra na recorrência.** Só geometria, só aparência, ou os dois. 3 seeds (42, 123, 7). No teste a aparência fica à frente (0,554 ± 0,001); nas sete a geometria ganha (0,532 ± 0,013) porque segura a cena densa 04. Os dois juntos não pegam o melhor de cada um.
 - **estresse da Parte 5** — queda de taxa de quadros ou qualidade do detector.
 
 ---
@@ -151,19 +153,19 @@ python scripts/train_temporal.py --track b --cell gru --window 16 --stride 8 --s
 python scripts/run_tracker.py --checkpoint checkpoints/temporal_best.pt --name temporal
 python scripts/evaluate_tracking.py --tracks experiments/results/temporal_tracks.csv --name temporal
 
-# Parte 3 — ablação, 3 seeds (exemplo com o Eixo 1: a célula recorrente)
-for cell in rnn lstm gru; do
+# Parte 3 — ablação, 3 seeds (Eixo 3: o que entra na recorrência)
+for input in appearance geometry both; do
   for seed in 42 123 7; do
-    python scripts/train_temporal.py --cell $cell --window 16 --seed $seed \
-      --name cell_${cell}_seed${seed}
-    python scripts/run_tracker.py --checkpoint checkpoints/cell_${cell}_seed${seed}_best.pt \
-      --name cell_${cell}_seed${seed}
+    python scripts/train_temporal.py --track b --input $input --cell gru \
+      --window 16 --stride 8 --seed $seed --name input_${input}_seed${seed}
+    python scripts/run_tracker.py --checkpoint checkpoints/input_${input}_seed${seed}_best.pt \
+      --name input_${input}_seed${seed}
     python scripts/evaluate_tracking.py \
-      --tracks experiments/results/cell_${cell}_seed${seed}_tracks.csv \
-      --name cell_${cell}_seed${seed}
+      --tracks experiments/results/input_${input}_seed${seed}_tracks.csv \
+      --name input_${input}_seed${seed}
   done
 done
-python scripts/summarize_ablation.py --axis cell
+python scripts/summarize_ablation.py --axis input
 
 # Parte 4 — galeria de falhas, horizonte de memória e a correção
 python scripts/failure_gallery.py --n-failures 3 --name failures
@@ -280,5 +282,17 @@ métrica, split, resolução/escala, e o que ficou fora.)
   abaixo do baseline (0,552 vs 0,570): ganha em 10 e 13 (câmera
   móvel), perde nas cenas densas 02 e 04, onde o ResNet confunde
   pedestres parecidos. Kalman e Trilha A ficam de fora.
+- **Eixo 3 (Parte 3).** Mesmo GRU, T=16, teacher forcing. Caixa em
+  `(cx, cy, w, h)` normalizado pela imagem. Depois do miss: aparência =
+  cosseno; geometria = IoU da caixa *prevista* (a track roda para
+  frente sem emitir caixa); os dois = `min(cosseno, 1 − IoU prevista)`,
+  limiar 0,5. 3 seeds. No teste (09+11, densidade ~10) a aparência
+  ganha por pouco e com menor desvio (0,554 ± 0,001 vs geometria
+  0,552 ± 0,009). Nas sete, a geometria ganha (0,532 ± 0,013) — o
+  salto está em 04 (0,659 vs 0,607), a cena mais densa. Em 02 (oclusão
+  29) os três caem juntos e nenhum recupera o baseline (0,414). Fundir
+  as duas cabeças não herda o melhor dos dois. A pergunta do enunciado:
+  quem sustenta a identidade numa oclusão longa *muda com a densidade*
+  — geometria na multidão, aparência no teste mais espaçado.
 - **MOTA.** Opcional e reportada à parte: com o detector congelado, os termos de
   FP/FN quase não variam entre as configurações e ela esconde o que muda.

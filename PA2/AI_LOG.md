@@ -50,6 +50,17 @@ quase qualquer par (IDF1 0,12). A associação ficou em dois estágios
 (IoU nas tracks vivas, aparência só depois do miss) e a consulta
 passa por um passo de GRU a partir do estado zero.
 
+### Parte 3 — Eixo 3
+
+A IA implementou `MotionRNN`, `FusionRNN`, smooth-L1 na caixa e o
+casamento depois do miss por braço (cosseno / IoU prevista / min dos
+dois). Os 9 treinos (3 entradas × 3 seeds) rodaram na RTX 3050 local,
+~46 min. Os números saíram dos CSVs, não foram inventados.
+
+Decisão que a IA não tomou sozinha: o eixo (input, não célula). A
+fusão `min(cosseno, IoU)` não pegou o melhor dos dois — na 04 a
+geometria sozinha é que segura a densidade.
+
 ### Erros da IA que tivemos que corrigir
 
 - O gráfico do descolamento saiu ordenado por número da cena (02…13),

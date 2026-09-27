@@ -64,10 +64,13 @@ def main():
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint = resolve_checkpoint(args.checkpoint)
     model, payload = load_checkpoint(checkpoint, device=device)
+    kind = getattr(model, "kind", payload.get("input", "appearance"))
     embed_dim = payload.get("kwargs", {}).get("embed_dim", 128)
-    encoder = CropEncoder(embed_dim=embed_dim, freeze=True).to(device)
-    if "encoder_proj" in payload:
-        encoder.proj.load_state_dict(payload["encoder_proj"])
+    encoder = None
+    if kind in {"appearance", "both"}:
+        encoder = CropEncoder(embed_dim=embed_dim, freeze=True).to(device)
+        if "encoder_proj" in payload:
+            encoder.proj.load_state_dict(payload["encoder_proj"])
 
     if args.split == "train":
         scenes = list(TRAIN_SCENES)
@@ -79,17 +82,21 @@ def main():
     rows = []
 
     for scene in scenes:
-        print(f"cache det {scene}...")
-        cache = cache_sequence_embeddings(scene, encoder, kind="det",
-                                          device=device)
         info, _, raw = load_sequence(scene, detector="SDP")
         dets = public_detections(raw)
-        embeddings = embeddings_for_detections(dets, cache)
+        embeddings = None
+        if encoder is not None:
+            print(f"cache det {scene}...")
+            cache = cache_sequence_embeddings(scene, encoder, kind="det",
+                                              device=device)
+            embeddings = embeddings_for_detections(dets, cache)
         tracker = Tracker(iou_threshold=args.iou_threshold,
                           max_age=args.max_age, min_hits=args.min_hits,
                           matcher="hungarian", motion=model,
-                          appearance_threshold=args.appearance_threshold)
-        tracks = tracker.run(dets, embeddings=embeddings)
+                          appearance_threshold=args.appearance_threshold,
+                          image_size=(info["im_width"], info["im_height"]))
+        tracks = tracker.run(dets, embeddings=embeddings,
+                             image_size=(info["im_width"], info["im_height"]))
         print(f"{scene}  {info['camera']:<7}  {len(tracks)} caixas  "
               f"{len({row[1] for row in tracks})} ids")
         for frame, identity, x, y, w, h in tracks:

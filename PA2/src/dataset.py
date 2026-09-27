@@ -344,6 +344,8 @@ class TrackWindowDataset:
                     "start": start,
                     "window": window,
                     "identities": identities,
+                    "im_width": info["im_width"],
+                    "im_height": info["im_height"],
                 })
 
     def __len__(self):

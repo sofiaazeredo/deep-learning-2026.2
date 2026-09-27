@@ -13,7 +13,13 @@ import torch.nn.functional as F
 
 class SmoothL1BoxLoss:
     def __init__(self, beta=1.0, parameterization="cxcywh"):
-        raise NotImplementedError
+        self.beta = float(beta)
+        self.parameterization = parameterization
+
+    def __call__(self, pred, target):
+        pred = pred.reshape(-1, 4)
+        target = target.reshape(-1, 4)
+        return F.smooth_l1_loss(pred, target, beta=self.beta)
 
 
 class GaussianNLLBoxLoss:

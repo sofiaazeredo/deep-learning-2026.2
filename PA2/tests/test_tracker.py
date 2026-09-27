@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
+import torch
 
 from src.tracker import Tracker
 
@@ -110,6 +111,46 @@ def test_appearance_keeps_ids_after_occlusion_far_from_last_box():
     first_iou = {row[2:4]: row[1] for row in iou_only if row[0] == 1}
     later_iou = {row[2:4]: row[1] for row in iou_only if row[0] == 4}
     assert first_iou[(0.0, 0.0)] == later_iou[(0.0, 0.0)]
+
+
+class FakeMotion:
+    kind = "geometry"
+
+    def init_state(self, batch=1, device="cpu"):
+        return None
+
+    def step(self, box, state):
+        pred = torch.as_tensor(box, dtype=torch.float32).clone()
+        if pred.dim() == 1:
+            pred[0] = pred[0] + 0.25
+        else:
+            pred = pred.clone()
+            pred[:, 0] = pred[:, 0] + 0.25
+        return pred, state
+
+
+def test_geometry_rematches_on_predicted_box_after_miss():
+    # A RNN de mentira empurra cx em +0.25 por passo. Depois de um miss o
+    # casamento usa a caixa prevista, não a última observada.
+    tracker = Tracker(iou_threshold=0.3, max_age=5, min_hits=1,
+                      matcher="hungarian", motion=FakeMotion(),
+                      image_size=(200.0, 40.0))
+    detections = [(1, 0.0, 0.0, 10.0, 10.0, 1.0),
+                  (1, 80.0, 0.0, 10.0, 10.0, 1.0),
+                  (3, 100.0, 0.0, 10.0, 10.0, 1.0),
+                  (3, 180.0, 0.0, 10.0, 10.0, 1.0)]
+
+    tracks = tracker.run(detections, image_size=(200.0, 40.0))
+    first = {row[2:4]: row[1] for row in tracks if row[0] == 1}
+    later = {row[2:4]: row[1] for row in tracks if row[0] == 3}
+    assert first[(0.0, 0.0)] == later[(100.0, 0.0)]
+    assert first[(80.0, 0.0)] == later[(180.0, 0.0)]
+
+    iou_only = Tracker(iou_threshold=0.3, max_age=5, min_hits=1).run(detections)
+    first_iou = {row[2:4]: row[1] for row in iou_only if row[0] == 1}
+    later_iou = {row[2:4]: row[1] for row in iou_only if row[0] == 3}
+    if (100.0, 0.0) in later_iou:
+        assert first_iou[(0.0, 0.0)] != later_iou[(100.0, 0.0)]
 
 
 def test_miss_resets_consecutive_hits_before_confirmation():

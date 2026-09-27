@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
 
-from src.losses import ContrastiveIdentityLoss
-from src.model import AppearanceRNN
+from src.losses import ContrastiveIdentityLoss, SmoothL1BoxLoss
+from src.model import AppearanceRNN, MotionRNN
 from src.training import truncated_bptt
 
 
@@ -42,6 +42,28 @@ def test_truncated_bptt_reduces_loss_on_toy_window():
                                     optimizer=optimizer).detach())
 
     assert first > 0
+    assert last < first
+
+
+def test_truncated_bptt_box_loss_drops():
+    torch.manual_seed(0)
+    model = MotionRNN(cell="gru", hidden=16)
+    loss_fn = SmoothL1BoxLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=5e-2)
+    window = {
+        1: [(1, torch.tensor([0.1, 0.2, 0.05, 0.1])),
+            (2, torch.tensor([0.15, 0.2, 0.05, 0.1])),
+            (3, torch.tensor([0.2, 0.2, 0.05, 0.1]))],
+        2: [(1, torch.tensor([0.8, 0.7, 0.05, 0.1])),
+            (2, torch.tensor([0.75, 0.7, 0.05, 0.1])),
+            (3, torch.tensor([0.7, 0.7, 0.05, 0.1]))],
+    }
+    first = float(truncated_bptt(model, window, box_loss_fn=loss_fn,
+                                 optimizer=optimizer).detach())
+    last = first
+    for _ in range(20):
+        last = float(truncated_bptt(model, window, box_loss_fn=loss_fn,
+                                    optimizer=optimizer).detach())
     assert last < first
 
 

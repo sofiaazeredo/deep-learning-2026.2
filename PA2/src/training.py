@@ -8,6 +8,8 @@ regimes existem para medir exatamente esse descolamento.
 
 import torch
 
+from src.model import unpack_step
+
 REGIMES = ("teacher_forcing", "scheduled_sampling", "free_running")
 
 
@@ -29,21 +31,41 @@ def sampling_probability(regime, epoch, total_epochs):
     raise ValueError(f"regime desconhecido: {regime}")
 
 
-def truncated_bptt(model, window, loss_fn, regime="teacher_forcing",
-                   clip_grad=None, optimizer=None):
+def _cat_states(packed, cell):
+    if cell == "lstm":
+        return (torch.cat([item[0] for item in packed], dim=1),
+                torch.cat([item[1] for item in packed], dim=1))
+    return torch.cat(packed, dim=1)
+
+
+def _split_state(new_state, index, cell):
+    if cell == "lstm":
+        return (new_state[0][:, index:index + 1],
+                new_state[1][:, index:index + 1])
+    return new_state[:, index:index + 1]
+
+
+def truncated_bptt(model, window, loss_fn=None, regime="teacher_forcing",
+                   clip_grad=None, optimizer=None, box_loss_fn=None):
     """
     Um passo de BPTT truncado sobre uma janela de T quadros.
 
-    `window` é um dicionário {id: [(frame, embedding), ...]} com embeddings
-    já L2 (tensores 1-D). Teacher forcing na Trilha B: sempre a observação
-    verdadeira. `clip_grad=None` desliga o clipping.
+    `window` é {id: [(frame, features), ...]} com tensores 1-D:
+      aparência  (D,)
+      geometria  (4,)
+      both       (D+4,)
+    Teacher forcing: sempre a observação verdadeira. `clip_grad=None`
+    desliga o clipping.
     """
 
     del regime
+    kind = getattr(model, "kind", "appearance")
     device = next(model.parameters()).device
     frames = sorted({frame for steps in window.values() for frame, _ in steps})
     states = {}
     outputs = []
+    pending_box = {}
+    box_losses = []
 
     model.train()
 
@@ -59,32 +81,38 @@ def truncated_bptt(model, window, loss_fn, regime="teacher_forcing",
         batch = torch.stack([embedding for _, embedding in present])
         packed = [states.get(identity, model.init_state(1, device))
                   for identity in identities]
-
-        if model.cell == "lstm":
-            state = (torch.cat([item[0] for item in packed], dim=1),
-                     torch.cat([item[1] for item in packed], dim=1))
-        else:
-            state = torch.cat(packed, dim=1)
-
-        vectors, new_state = model.step(batch, state)
+        state = _cat_states(packed, model.cell)
+        raw, new_state = model.step(batch, state)
+        vectors, boxes = unpack_step(raw, kind)
 
         for i, identity in enumerate(identities):
-            if model.cell == "lstm":
-                states[identity] = (new_state[0][:, i:i + 1],
-                                    new_state[1][:, i:i + 1])
-            else:
-                states[identity] = new_state[:, i:i + 1]
-            outputs.append((identity, vectors[i]))
+            states[identity] = _split_state(new_state, i, model.cell)
+            if vectors is not None:
+                outputs.append((identity, vectors[i]))
+            if boxes is not None and box_loss_fn is not None:
+                current_box = batch[i, -4:] if kind == "both" else batch[i]
+                if identity in pending_box:
+                    box_losses.append(box_loss_fn(pending_box[identity],
+                                                  current_box))
+                pending_box[identity] = boxes[i]
 
-    # InfoNCE/triplet precisam de dois vetores do mesmo id. Por quadro
-    # cada id aparece uma vez; a perda olha a janela inteira.
-    if len(outputs) < 2:
+    losses = []
+    if kind in {"appearance", "both"} and loss_fn is not None:
+        if len(outputs) < 2:
+            losses.append(torch.zeros((), device=device, requires_grad=True))
+        else:
+            embeddings = torch.stack([vector for _, vector in outputs])
+            labels = torch.tensor([identity for identity, _ in outputs],
+                                  device=device)
+            losses.append(loss_fn(embeddings, labels))
+
+    if box_losses:
+        losses.append(torch.stack(box_losses).mean())
+
+    if not losses:
         return torch.zeros((), device=device, requires_grad=True)
 
-    embeddings = torch.stack([vector for _, vector in outputs])
-    labels = torch.tensor([identity for identity, _ in outputs],
-                          device=device)
-    loss = loss_fn(embeddings, labels)
+    loss = torch.stack(losses).mean()
 
     if optimizer is not None:
         optimizer.zero_grad(set_to_none=True)
