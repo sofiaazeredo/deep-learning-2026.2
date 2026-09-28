@@ -363,11 +363,48 @@ def test_drop_distractor_matches_removes_only_the_matched_prediction():
         (1, 10, 0.0, 0.0, 10.0, 10.0),
         (1, 20, 50.0, 0.0, 10.0, 10.0),
     ]
-    distractors = [(1, 99, 0.0, 0.0, 10.0, 10.0, 1, 7, 1.0)]
+    gt_all = [(1, 99, 0.0, 0.0, 10.0, 10.0, 0, 7, 1.0)]   # pessoa estática
 
-    kept = drop_distractor_matches(preds, distractors)
+    kept = drop_distractor_matches(preds, gt_all)
 
     assert [row[1] for row in kept] == [20]
+
+
+def test_prediction_on_pedestrian_next_to_distractor_is_kept():
+    # Protocolo TrackEval: o Hungarian roda contra TODO o gt do quadro. A
+    # predição casa melhor com o pedestre (IoU 1) que com a pessoa estática
+    # ao lado (IoU 0,82), então fica — casar só contra distractores a
+    # removeria.
+    preds = [(1, 10, 0.0, 0.0, 10.0, 10.0)]
+    gt_all = [(1, 1, 0.0, 0.0, 10.0, 10.0, 1, 1, 1.0),
+              (1, 99, 1.0, 0.0, 10.0, 10.0, 0, 7, 1.0)]
+
+    assert drop_distractor_matches(preds, gt_all) == preds
+
+
+def test_prediction_on_a_car_is_not_dropped():
+    # Carro (classe 3) não é distractor: a predição fica e vira FP.
+    preds = [(1, 10, 0.0, 0.0, 10.0, 10.0)]
+    gt_all = [(1, 99, 0.0, 0.0, 10.0, 10.0, 0, 3, 1.0)]
+
+    assert drop_distractor_matches(preds, gt_all) == preds
+
+
+def test_continuity_only_from_the_previous_frame():
+    # g1 casa com p no quadro 1; no 2 p pula para g2 (g1 fica sem par); no
+    # 3 e no 4, g1 e g2 se sobrepõem com p no meio. Continuidade vem do par
+    # do QUADRO ANTERIOR (g2-p), como no TrackEval: g2 segue com p e nada
+    # fragmenta. Com a memória antiga (último par de sempre) g1 "roubava" p
+    # de volta e contava 1 fragmentação.
+    gt = [(1, 1, 0, 0, 10, 10), (1, 2, 100, 0, 10, 10),
+          (2, 1, 0, 0, 10, 10), (2, 2, 50, 0, 10, 10),
+          (3, 1, 50, 0, 10, 10), (3, 2, 51, 0, 10, 10),
+          (4, 1, 50, 0, 10, 10), (4, 2, 51, 0, 10, 10)]
+    pred = [(1, 7, 0, 0, 10, 10), (2, 7, 50, 0, 10, 10),
+            (3, 7, 50.5, 0, 10, 10), (4, 7, 50.5, 0, 10, 10)]
+
+    assert fragmentations(gt, pred) == 0
+    assert id_switches(gt, pred) == 0
 
 
 def main():

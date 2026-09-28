@@ -49,7 +49,7 @@ def collect_events(tracks_path):
     for scene in SCENES:
         info, gt, _ = load_sequence(scene)
         pred = drop_distractor_matches(by_sequence.get(scene, []),
-                                       info["distractors"])
+                                       info["gt_all"])
         for event in switch_events(gt, pred):
             event["scene"] = scene
             event["camera"] = info["camera"]

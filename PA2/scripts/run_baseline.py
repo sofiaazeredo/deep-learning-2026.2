@@ -59,7 +59,7 @@ def mean_idf1(scenes, detector, matcher, iou_threshold, max_age, min_hits,
                                        nms_threshold=nms_threshold)
         tracks = Tracker(iou_threshold=iou_threshold, max_age=max_age,
                          min_hits=min_hits, matcher=matcher).run(detections)
-        tracks = drop_distractor_matches(tracks, info["distractors"])
+        tracks = drop_distractor_matches(tracks, info["gt_all"])
         scores.append(evaluate_sequence(gt, tracks)["idf1"])
 
     return sum(scores) / len(scores) if scores else float("nan")

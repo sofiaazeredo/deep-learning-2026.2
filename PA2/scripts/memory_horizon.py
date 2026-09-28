@@ -131,7 +131,7 @@ def empirical(tracks_path, name):
     for scene in SCENES:
         info, gt, _ = load_sequence(scene)
         pred = drop_distractor_matches(by_sequence.get(scene, []),
-                                       info["distractors"])
+                                       info["gt_all"])
         _, matches = _clear_mot_matches(gt, pred, 0.5)
         intervals = occlusion_intervals(gt)
         for gt_id, items in intervals.items():

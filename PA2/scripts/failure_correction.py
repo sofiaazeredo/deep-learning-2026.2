@@ -51,7 +51,7 @@ def run_all(model, encoder, device, miss_prefer_iou):
                           miss_prefer_iou=miss_prefer_iou)
         tracks = tracker.run(dets, embeddings=embeddings,
                              image_size=(info["im_width"], info["im_height"]))
-        tracks = drop_distractor_matches(tracks, info["distractors"])
+        tracks = drop_distractor_matches(tracks, info["gt_all"])
         score = evaluate_sequence(gt, tracks)
         score.update({"sequence": scene, "split": info.get("camera"),
                       "camera": info["camera"], "occlusion": info["occlusion"],

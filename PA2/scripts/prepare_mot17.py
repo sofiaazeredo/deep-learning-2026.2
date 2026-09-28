@@ -44,7 +44,7 @@ def measure_detectors(root, score_threshold=0.0, nms_threshold=0.5):
             # com eles some (não é FP), como no protocolo MOT17.
             det_as_tracks = [(row[0], i, row[1], row[2], row[3], row[4], row[5])
                              for i, row in enumerate(dets, start=1)]
-            scored = drop_distractor_matches(det_as_tracks, info["distractors"])
+            scored = drop_distractor_matches(det_as_tracks, info["gt_all"])
             detections = [(row[0], row[2], row[3], row[4], row[5], row[6])
                           for row in scored]
             ap, details = average_precision(gt, detections)

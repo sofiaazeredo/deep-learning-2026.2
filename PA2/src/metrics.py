@@ -14,12 +14,15 @@ ground truth do gerador sintético (7) e a saída do tracker (6).
 
 Definições (as mesmas do CLEAR MOT e do IDF1 da literatura):
 
-  casamento por quadro   CLEAR MOT (Bernardin & Stiefelhagen, 2008): o par
-                         (gt, predição) casado antes continua casado se o IoU
-                         ainda passa do limiar; o resto vai para o Hungarian,
-                         maximizando o IoU total. Sem a continuidade, duas
-                         trajetórias que se cruzam trocariam de par só porque
-                         o Hungarian achou uma soma de IoU um pouco maior.
+  casamento por quadro   CLEAR MOT (Bernardin & Stiefelhagen, 2008), como no
+                         TrackEval: o par (gt, predição) casado NO QUADRO
+                         ANTERIOR continua casado se o IoU ainda passa do
+                         limiar; o resto vai para o Hungarian, maximizando o
+                         IoU total. Sem a continuidade, duas trajetórias que
+                         se cruzam trocariam de par só porque o Hungarian
+                         achou uma soma de IoU um pouco maior. Par de antes
+                         de um buraco não tem prioridade: senão um gt que
+                         volta "rouba" a predição de quem estava com ela.
   ID switch              uma identidade verdadeira casa com um id previsto
                          diferente do último com que ela casou (a memória
                          atravessa buracos).
@@ -129,7 +132,7 @@ def _clear_mot_matches(gt_tracks, pred_tracks, threshold):
 
     gt_frames = {}
     matches = {}
-    last = {}                      # gt_id -> último pred_id casado
+    previous = {}                  # gt_id -> pred_id casado no quadro anterior
 
     for frame in sorted(gt):
         gt_ids, gt_boxes = gt[frame]
@@ -146,7 +149,7 @@ def _clear_mot_matches(gt_tracks, pred_tracks, threshold):
 
         # 1) continuidade: o par anterior segue se ainda passa do limiar.
         for i, gt_id in enumerate(gt_ids):
-            j = pred_index.get(last.get(gt_id))
+            j = pred_index.get(previous.get(gt_id))
 
             if j is not None and j not in used_pred and iou[i, j] >= threshold:
                 frame_matches[gt_id] = pred_ids[j]
@@ -163,7 +166,10 @@ def _clear_mot_matches(gt_tracks, pred_tracks, threshold):
         for a, b in pairs:
             frame_matches[gt_ids[free_gt[a]]] = pred_ids[free_pred[b]]
 
-        last.update(frame_matches)
+        # Só o quadro anterior dá prioridade (TrackEval). A memória de
+        # longo prazo, que atravessa buracos, é só para CONTAR switches, em
+        # _clear_mot_counts.
+        previous = frame_matches
         matches[frame] = frame_matches
 
     return gt_frames, matches
@@ -442,18 +448,24 @@ def average_precision(gt_tracks, detections, threshold=0.5):
                 "n_pred": len(preds), "tp": n_tp, "fp": int(fp[-1])}
 
 
-def drop_distractor_matches(pred_tracks, distractors, threshold=0.5):
+def drop_distractor_matches(pred_tracks, gt_rows, threshold=0.5):
     """
-    Protocolo MOT17: predição casada (IoU >= limiar, um-para-um) a uma
-    caixa distractor (pessoa estática, reflexo, etc.) some antes da
-    métrica — não é TP nem FP.
+    Protocolo MOT17 do TrackEval. Em cada quadro, as predições casam
+    (Hungarian, IoU >= limiar) com TODO o gt do quadro — pedestres,
+    distractores e o resto. Só a predição cujo par é distractor (classes 2,
+    7, 8, 12) some antes da métrica: não é TP nem FP. Predição em carro ou
+    oclusor fica, e vira FP.
+
+    `gt_rows` são as linhas cruas do gt.txt (info["gt_all"]), com a classe
+    na coluna 7.
     """
 
-    dist_by = {}
+    from src.dataset import DISTRACTOR_CLASSES
 
-    for row in distractors:
-        dist_by.setdefault(int(row[0]), []).append(
-            np.asarray(row[2:6], dtype=np.float64))
+    gt_by = {}
+
+    for row in gt_rows:
+        gt_by.setdefault(int(row[0]), []).append(row)
 
     pred_by = {}
 
@@ -463,13 +475,23 @@ def drop_distractor_matches(pred_tracks, distractors, threshold=0.5):
     drop = set()
 
     for frame, indices in pred_by.items():
-        dist_boxes = dist_by.get(frame)
-        if not dist_boxes:
+        frame_gt = gt_by.get(frame)
+        if not frame_gt:
             continue
 
-        pred_boxes = [pred_tracks[i][2:6] for i in indices]
-        for _, j in match_frame(dist_boxes, pred_boxes, threshold):
-            drop.add(indices[j])
+        gt_boxes = np.array([row[2:6] for row in frame_gt], dtype=np.float64)
+        pred_boxes = np.array([pred_tracks[i][2:6] for i in indices],
+                              dtype=np.float64)
+
+        # Mesmo casamento do TrackEval: maximiza o IoU total entre os pares
+        # acima do limiar (com a mesma folga de ponto flutuante).
+        score = iou_matrix(gt_boxes, pred_boxes)
+        score[score < threshold - np.finfo(float).eps] = 0.0
+        rows, cols = linear_sum_assignment(-score)
+
+        for r, c in zip(rows, cols):
+            if score[r, c] > 0 and int(frame_gt[r][7]) in DISTRACTOR_CLASSES:
+                drop.add(indices[c])
 
     return [row for i, row in enumerate(pred_tracks) if i not in drop]
 

@@ -18,8 +18,11 @@ import numpy as np
 SEQUENCE_ROOT = "data/MOT17"
 DETECTORS = ("DPM", "FRCNN", "SDP")
 
-# Pedestres reais (conf=1, class=1). O resto do gt.txt é ignorado no
-# protocolo oficial: matching a essas caixas remove a predição (não é FP).
+# Pedestres reais (conf=1, class=1) formam o gt. Das outras classes, só as
+# distractoras do protocolo oficial (TrackEval, MOT17) — 2 pessoa em veículo,
+# 7 pessoa estática, 8 distractor, 12 reflexo — removem a predição que casa
+# com elas. Carro, bicicleta, moto, veículo e oclusores (3, 4, 5, 6, 9, 10,
+# 11) só ficam fora do gt: predição em cima deles é FP.
 PEDESTRIAN_CLASS = 1
 DISTRACTOR_CLASSES = (2, 7, 8, 12)
 
@@ -119,8 +122,8 @@ def _read_seqinfo(path):
 
 def split_ground_truth(rows):
     """
-    Pedestres reais (conf=1, class=1) vs. o resto, que o protocolo MOT17
-    trata como região de ignore: detecção que casa com eles some, não é FP.
+    Pedestres reais (conf=1, class=1) e distractores oficiais (classes 2, 7,
+    8, 12). As outras linhas não entram em nenhuma das duas listas.
     """
 
     pedestrians, distractors = [], []
@@ -129,7 +132,7 @@ def split_ground_truth(rows):
         conf, klass = row[6], row[7]
         if klass == PEDESTRIAN_CLASS and conf == 1:
             pedestrians.append(row)
-        else:
+        elif klass in DISTRACTOR_CLASSES:
             distractors.append(row)
 
     return pedestrians, distractors
@@ -225,9 +228,11 @@ def load_sequence(name, detector="SDP", root=SEQUENCE_ROOT):
     """
     Devolve (info, gt_tracks, detections) de uma sequência.
 
-    gt_tracks são só pedestres (conf=1, class=1). Distratores ficam em
-    info["distractors"]. detections são as linhas cruas do det.txt; o
-    NMS e o limiar de score entram em src.detection.public_detections.
+    gt_tracks são só pedestres (conf=1, class=1). Todas as linhas do gt.txt
+    (todas as classes) ficam em info["gt_all"], que é o que
+    src.metrics.drop_distractor_matches precisa para casar como o TrackEval.
+    detections são as linhas cruas do det.txt; o NMS e o limiar de score
+    entram em src.detection.public_detections.
     """
 
     root = resolve_root(root)
@@ -242,7 +247,7 @@ def load_sequence(name, detector="SDP", root=SEQUENCE_ROOT):
 
     info = _read_seqinfo(path / "seqinfo.ini")
     raw_gt = read_mot_file(path / "gt" / "gt.txt") if (path / "gt" / "gt.txt").exists() else []
-    pedestrians, distractors = split_ground_truth(raw_gt)
+    pedestrians, _ = split_ground_truth(raw_gt)
 
     det_path = path / "det" / "det.txt"
     detections = read_mot_file(det_path) if det_path.exists() else []
@@ -256,7 +261,7 @@ def load_sequence(name, detector="SDP", root=SEQUENCE_ROOT):
         "scene": scene,
         "detector": detector,
         "camera": CAMERA.get(scene, "unknown"),
-        "distractors": distractors,
+        "gt_all": raw_gt,
         "n_frames": n_frames,
         "n_ids": n_ids,
         "density": density,

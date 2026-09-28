@@ -248,18 +248,22 @@ métrica, split, resolução/escala, e o que ficou fora.)
 - **Métrica de identidade.** IDF1 exige uma atribuição global um-para-um entre
   identidades previstas e verdadeiras ao longo da sequência inteira, não um
   casamento por quadro. ID switches e fragmentações usam o casamento por
-  quadro do CLEAR MOT: o par (gt, predição) do quadro anterior continua se o
-  IoU ainda passa do limiar, e só o resto vai para o Hungarian — sem isso,
+  quadro do CLEAR MOT (definição do TrackEval): o par (gt, predição) do
+  quadro imediatamente anterior continua se o IoU ainda passa do limiar, e só
+  o resto vai para o Hungarian — sem isso,
   duas trajetórias que se cruzam contam switch à toa. Fragmentação só conta
   interrupção em quadro em que a identidade está no ground truth (oclusão
   total não fragmenta). Limiar de IoU 0,5, inclusivo.
 - **Split.** Por sequência, nunca por quadro. Teste = 09 (estática, rua) e 11
   (móvel, indoor); treino = 02, 04, 05, 10, 13. A tabela da Parte 1 no topo
   usa o teste; a figura do descolamento usa as sete.
-- **GT e distractores.** Só `conf=1, class=1` entra no ground truth. Predição
-  com IoU ≥ 0,5 a uma caixa distractor (pessoa estática, reflexo, etc.) é
-  removida antes da métrica — protocolo MOT17, senão um acerto em pessoa
-  parada contaria como FP.
+- **GT e distractores.** Só `conf=1, class=1` entra no ground truth. Como no
+  TrackEval, as predições de cada quadro casam (Hungarian, IoU ≥ 0,5) com
+  *todo* o gt do quadro, e só a que cai num distractor oficial — classes 2
+  (pessoa em veículo), 7 (pessoa estática), 8 (distractor), 12 (reflexo) —
+  sai antes da métrica. Predição em carro ou oclusor (3, 4, 5, 6, 9, 10, 11)
+  fica e conta como FP. Validado contra o TrackEval nas execuções salvas:
+  IDF1, switches, fragmentações, MOTA, FP e FN idênticos nas 7 cenas.
 - **AP de detecção.** `average_precision` em IoU 0,5, ranqueada por score,
   implementação nossa. É o painel de cima da figura, não o IDF1.
 - **Associação / nascimento / morte.** Compara com a última caixa observada

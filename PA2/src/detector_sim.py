@@ -27,7 +27,11 @@ Os três botões:
                        sequência e posição uniforme na imagem.
 
 O score de verdadeiros e falsos positivos vem da mesma distribuição, então
-um limiar de score não separa os dois — quem separa é a associação.
+um limiar de score não separa os dois — quem separa é a associação. Com
+`scores` (detecções reais, Parte 5) cada verdadeiro mantém o próprio score e
+o FP sorteia um dos scores reais: o ranking do detector — e o AP — só muda
+pelo que foi estragado. Sem `scores` (gt sintético, que não tem score) os
+dois saem de uniforme(0,5; 1).
 """
 
 import numpy as np
@@ -43,12 +47,14 @@ def degrade(
     false_positive_rate=0.0,
     image_size=None,
     seed=None,
+    scores=None,
 ):
     """
     Descarta p% das caixas, adiciona ruído gaussiano nas coordenadas e injeta
     falsos positivos. Devolve caixas sem identidade — o simulador não vaza ID.
 
     image_size = (largura, altura), obrigatório quando há falsos positivos.
+    scores = score de cada caixa de entrada (detecções reais), ou None.
     """
 
     if not 0.0 <= drop_rate <= 1.0:
@@ -60,6 +66,8 @@ def degrade(
                          f"{false_positive_rate}")
     if false_positive_rate > 0 and image_size is None:
         raise ValueError("falsos positivos precisam de image_size")
+    if scores is not None and len(scores) != len(boxes):
+        raise ValueError("scores precisa ter um valor por caixa")
 
     rng = np.random.default_rng(seed)
 
@@ -73,18 +81,24 @@ def degrade(
     keep = rng.random(len(boxes)) >= drop_rate
     kept_frames, kept = frames[keep], xywh[keep]
 
-    # Ruído relativo ao tamanho, aplicado no centro e no tamanho.
+    # Ruído relativo ao tamanho, aplicado no centro e no tamanho. Os sorteios
+    # acontecem sempre (a sequência aleatória não depende do ruído), mas sem
+    # ruído a caixa passa intacta, bit a bit.
     w, h = kept[:, 2], kept[:, 3]
-    cx = kept[:, 0] + w / 2 + rng.normal(0.0, 1.0, len(kept)) * coord_noise * w
-    cy = kept[:, 1] + h / 2 + rng.normal(0.0, 1.0, len(kept)) * coord_noise * h
-    new_w = np.maximum(w + rng.normal(0.0, 1.0, len(kept)) * coord_noise * w,
-                       MIN_SIZE)
-    new_h = np.maximum(h + rng.normal(0.0, 1.0, len(kept)) * coord_noise * h,
-                       MIN_SIZE)
+    noise = rng.normal(0.0, 1.0, (4, len(kept)))
 
-    detections = np.column_stack([cx - new_w / 2, cy - new_h / 2,
-                                  new_w, new_h])
+    if coord_noise > 0:
+        cx = kept[:, 0] + w / 2 + noise[0] * coord_noise * w
+        cy = kept[:, 1] + h / 2 + noise[1] * coord_noise * h
+        new_w = np.maximum(w + noise[2] * coord_noise * w, MIN_SIZE)
+        new_h = np.maximum(h + noise[3] * coord_noise * h, MIN_SIZE)
+        detections = np.column_stack([cx - new_w / 2, cy - new_h / 2,
+                                      new_w, new_h])
+    else:
+        detections = kept.copy()
+
     out_frames = kept_frames
+    n_true = len(kept)
 
     # Falsos positivos, proporcionais às caixas verdadeiras do quadro (antes
     # do descarte: o detector erra onde há gente, não onde sobrou gente).
@@ -104,12 +118,20 @@ def degrade(
                                 np.column_stack([fp_x, fp_y, sizes])])
         out_frames = np.concatenate([out_frames, fp_frames])
 
-    scores = rng.uniform(*SCORE_RANGE, len(out_frames))
+    if scores is None:
+        out_scores = rng.uniform(*SCORE_RANGE, len(out_frames))
+    else:
+        real = np.asarray(scores, dtype=np.float64)
+        out_scores = np.concatenate([
+            real[keep],
+            rng.choice(real, size=len(out_frames) - n_true),
+        ])
 
     # Quadro crescente, score decrescente dentro do quadro.
-    order = np.lexsort((-scores, out_frames))
+    order = np.lexsort((-out_scores, out_frames))
 
-    return [(int(out_frames[i]), *map(float, detections[i]), float(scores[i]))
+    return [(int(out_frames[i]), *map(float, detections[i]),
+             float(out_scores[i]))
             for i in order]
 
 
@@ -125,7 +147,8 @@ def degrade_detections(dets, drop_rate=0.0, coord_noise=0.0,
              for index, row in enumerate(dets)]
     return degrade(boxes, drop_rate=drop_rate, coord_noise=coord_noise,
                    false_positive_rate=false_positive_rate,
-                   image_size=image_size, seed=seed)
+                   image_size=image_size, seed=seed,
+                   scores=[float(row[5]) for row in dets])
 
 
 # As três intensidades do teste de estresse da Parte 5 (e da varredura do

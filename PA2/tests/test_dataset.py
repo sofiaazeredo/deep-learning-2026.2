@@ -15,6 +15,7 @@ from src.dataset import (
     TRAIN_SCENES,
     TrackWindowDataset,
     create_splits,
+    load_sequence,
     median_occlusion,
     read_mot_file,
     scene_id,
@@ -44,16 +45,47 @@ def test_read_det_file_without_class(tmp_path):
 
 def test_split_ground_truth_keeps_only_real_pedestrians():
     rows = [
-        (1, 1, 0, 0, 10, 10, 1, 1, 1.0),
-        (1, 2, 0, 0, 10, 10, 0, 1, 1.0),
-        (1, 3, 0, 0, 10, 10, 1, 7, 1.0),
-        (1, 4, 0, 0, 10, 10, 1, 8, 0.2),
+        (1, 1, 0, 0, 10, 10, 1, 1, 1.0),    # pedestre
+        (1, 2, 0, 0, 10, 10, 0, 1, 1.0),    # pedestre com conf=0: fora do gt
+        (1, 3, 0, 0, 10, 10, 1, 7, 1.0),    # pessoa estática
+        (1, 4, 0, 0, 10, 10, 1, 8, 0.2),    # distractor
     ]
 
     pedestrians, distractors = split_ground_truth(rows)
 
     assert [row[1] for row in pedestrians] == [1]
-    assert [row[1] for row in distractors] == [2, 3, 4]
+    assert [row[1] for row in distractors] == [3, 4]
+
+
+def test_distractors_are_only_the_official_classes():
+    # TrackEval / MOT17: só 2 (pessoa em veículo), 7 (pessoa estática),
+    # 8 (distractor) e 12 (reflexo) são distractores. Carro (3), bicicleta
+    # (4), moto (5), veículo (6) e oclusores (9, 10, 11) só ficam de fora do
+    # gt: predição em cima deles é FP, não some.
+    rows = [(1, k, 0, 0, 10, 10, 0, k, 1.0) for k in range(2, 13)]
+
+    _, distractors = split_ground_truth(rows)
+
+    assert sorted(row[7] for row in distractors) == [2, 7, 8, 12]
+
+
+def test_load_sequence_exposes_every_gt_row():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "train" / "MOT17-02-SDP"
+        (folder / "gt").mkdir(parents=True)
+        (folder / "seqinfo.ini").write_text(
+            "[Sequence]\nname=MOT17-02-SDP\nimDir=img1\nframeRate=30\n"
+            "seqLength=2\nimWidth=100\nimHeight=100\nimExt=.jpg\n")
+        (folder / "gt" / "gt.txt").write_text(
+            "1,1,0,0,10,10,1,1,1\n1,2,50,0,10,10,0,3,1\n2,1,1,0,10,10,1,1,1\n")
+
+        info, gt, _ = load_sequence("02", root=tmp)
+
+    assert len(gt) == 2
+    assert len(info["gt_all"]) == 3          # o carro também, para o matching
+    assert "distractors" not in info         # quem usar o nome velho quebra alto
 
 
 def test_create_splits_is_fixed_and_ignores_seed():

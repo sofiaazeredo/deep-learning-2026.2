@@ -189,6 +189,29 @@ def test_degrade_detections_reads_xywh_not_id():
     ]
 
 
+def test_degrade_detections_keeps_the_real_scores():
+    # Sem estragar nada, a saída é a entrada: o ranking do detector (e o AP
+    # calculado em cima dele) não pode mudar só por passar pelo simulador.
+    dets = [(1, 10.0, 20.0, 8.0, 12.0, 0.91),
+            (1, 40.0, 20.0, 8.0, 12.0, 0.42),
+            (2, 12.0, 20.0, 8.0, 12.0, 0.77)]
+
+    assert degrade_detections(dets, seed=0) == dets
+
+
+def test_degrade_detections_false_positive_scores_come_from_real_scores():
+    # O FP tira o score da mesma distribuição do detector, então um limiar
+    # de score continua sem separar FP de verdadeiro.
+    dets = [(t, 10.0 * i, 20.0, 8.0, 12.0, s)
+            for t in range(1, 201) for i, s in enumerate((0.45, 0.6, 0.95))]
+
+    out = degrade_detections(dets, drop_rate=1.0, false_positive_rate=1.0,
+                             image_size=IMAGE_SIZE, seed=0)
+
+    assert out
+    assert {round(row[5], 2) for row in out} <= {0.45, 0.6, 0.95}
+
+
 def test_intensities_grow_from_light_to_strong():
     light, medium, strong = (INTENSITIES[k] for k in ("leve", "media", "forte"))
 

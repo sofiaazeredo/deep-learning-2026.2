@@ -68,7 +68,7 @@ def main():
 
     for scene, pred in sorted(by_sequence.items()):
         info, gt, raw = load_sequence(scene, detector=args.detector, root=root)
-        pred = drop_distractor_matches(pred, info["distractors"],
+        pred = drop_distractor_matches(pred, info["gt_all"],
                                        threshold=args.iou_threshold)
         metrics = evaluate_sequence(gt, pred, threshold=args.iou_threshold)
 
@@ -76,7 +76,7 @@ def main():
                                  nms_threshold=args.nms_threshold)
         det_tracks = [(row[0], i, row[1], row[2], row[3], row[4], row[5])
                       for i, row in enumerate(dets, start=1)]
-        det_tracks = drop_distractor_matches(det_tracks, info["distractors"],
+        det_tracks = drop_distractor_matches(det_tracks, info["gt_all"],
                                              threshold=args.iou_threshold)
         detections = [(row[0], row[2], row[3], row[4], row[5], row[6])
                       for row in det_tracks]

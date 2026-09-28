@@ -42,10 +42,10 @@ TRACKER_KW = dict(iou_threshold=0.2, max_age=20, min_hits=2,
                   matcher="hungarian", appearance_threshold=0.5)
 
 
-def detections_ap(gt, dets, distractors):
+def detections_ap(gt, dets, gt_all):
     rows = [(row[0], index, row[1], row[2], row[3], row[4], row[5])
             for index, row in enumerate(dets, start=1)]
-    rows = drop_distractor_matches(rows, distractors)
+    rows = drop_distractor_matches(rows, gt_all)
     cleaned = [(row[0], row[2], row[3], row[4], row[5], row[6]) for row in rows]
     return average_precision(gt, cleaned)
 
@@ -56,7 +56,7 @@ def run_one(dets, embeddings, info, model=None, miss_prefer_iou=False):
                       miss_prefer_iou=miss_prefer_iou)
     tracks = tracker.run(dets, embeddings=embeddings,
                          image_size=(info["im_width"], info["im_height"]))
-    return drop_distractor_matches(tracks, info["distractors"])
+    return drop_distractor_matches(tracks, info["gt_all"])
 
 
 def mean_split(rows, field, scenes=None):
@@ -93,7 +93,7 @@ def detector_stress(checkpoint, name, device, seed):
                       flush=True)
                 embeddings = embed_detections(scene, dets, encoder,
                                               device=device)
-            ap, details = detections_ap(gt, dets, info["distractors"])
+            ap, details = detections_ap(gt, dets, info["gt_all"])
             baseline = evaluate_sequence(
                 gt, run_one(dets, None, info))
             temporal = evaluate_sequence(
