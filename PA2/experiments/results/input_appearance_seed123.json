@@ -4,7 +4,8 @@
   "input": "appearance",
   "cell": "gru",
   "window": 16,
-  "loss": "contrastive",
+  "loss": "predictive",
+  "min_visibility": 0.25,
   "seed": 123,
-  "best_loss": 2.6522356229435675
+  "best_loss": 2.2291063819399457
 }

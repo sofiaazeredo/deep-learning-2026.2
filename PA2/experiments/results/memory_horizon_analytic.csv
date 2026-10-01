@@ -1,16 +1,30 @@
 checkpoint,k,grad_norm
-input_appearance_seed42_best,0,0.00012428250038319232
-input_appearance_seed42_best,1,0.00011316086331326356
-input_appearance_seed42_best,2,0.00011270013553789809
-input_appearance_seed42_best,3,0.00011266485997331656
-input_appearance_seed42_best,4,0.00011290497359257742
-input_appearance_seed42_best,5,0.00011229174637222111
-input_appearance_seed42_best,6,0.00011225639238838543
-input_appearance_seed42_best,7,0.00011213618211599367
-input_appearance_seed42_best,8,0.00011181542683629549
-input_appearance_seed42_best,9,0.00011198096819646591
-input_appearance_seed42_best,10,0.00011194021975123418
-input_appearance_seed42_best,11,0.0001118960333857212
-input_appearance_seed42_best,12,0.00011184557431360152
-input_appearance_seed42_best,13,0.00011191444550065115
-input_appearance_seed42_best,14,0.00011158168049025311
+final (temporal_best),0,0.135925376787615
+final (temporal_best),1,0.10817201091762492
+final (temporal_best),2,0.09031396379316516
+final (temporal_best),3,0.07674133084292382
+final (temporal_best),4,0.07190718507144554
+final (temporal_best),5,0.06826088626330089
+final (temporal_best),6,0.06370345805717541
+final (temporal_best),7,0.05313253801054029
+final (temporal_best),8,0.05095878980453943
+final (temporal_best),9,0.04714459533318857
+final (temporal_best),10,0.04096850843207643
+final (temporal_best),11,0.034609703172370145
+final (temporal_best),12,0.032263041621589585
+final (temporal_best),13,0.027775465791200493
+antigo (contrastiva),0,0.0002420029653059532
+antigo (contrastiva),1,0.00016290681515190668
+antigo (contrastiva),2,0.00016057163470873276
+antigo (contrastiva),3,0.00015779198481331012
+antigo (contrastiva),4,0.00016189018438322864
+antigo (contrastiva),5,0.00016061571078661603
+antigo (contrastiva),6,0.00016082315944228982
+antigo (contrastiva),7,0.0001615443182425683
+antigo (contrastiva),8,0.00014661440019616583
+antigo (contrastiva),9,0.00014583500064984203
+antigo (contrastiva),10,0.00014194127090939876
+antigo (contrastiva),11,0.00013219058168743123
+antigo (contrastiva),12,0.00011263113555974992
+antigo (contrastiva),13,0.00010828878614646118
+antigo (contrastiva),14,0.0001083059049612362

@@ -1,10 +1,11 @@
 {
-  "checkpoint": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/checkpoints/input_geometry_seed42_best.pt",
+  "checkpoint": "checkpoints/input_geometry_seed42_best.pt",
   "track": "b",
   "input": "geometry",
   "cell": "gru",
   "window": 16,
-  "loss": "contrastive",
+  "loss": "predictive",
+  "min_visibility": 0.0,
   "seed": 42,
-  "best_loss": 2.988418866450744e-05
+  "best_loss": 0.08212712608931085
 }

@@ -1,9 +1,16 @@
 {
-  "diagnosis": "Depois de um miss curto em cena densa a apar\u00eancia casa o pedestre errado. Corre\u00e7\u00e3o: nas tracks perdidas, IoU da \u00faltima caixa primeiro; o cosseno s\u00f3 no que sobra.",
-  "test_idf1_before": 0.5523889967764399,
-  "test_idf1_after": 0.5680289540472492,
-  "all_idf1_before": 0.5097628933757842,
-  "all_idf1_after": 0.5464165534177662,
-  "all_switches_before": 1930,
-  "all_switches_after": 1383
+  "diagnosis": "34% dos ID switches do modelo final (treino) s\u00e3o 'n\u00e3o recasou' com buraco mediano de 2 quadros: a duplicata nascida no quadro do miss casa antes da track confirmada. Corre\u00e7\u00e3o: tentativas s\u00f3 casam depois das confirmadas (prefer_confirmed).",
+  "decided_on": "train",
+  "train_idf1_before": 0.5417108810546833,
+  "train_idf1_after": 0.5602048494038502,
+  "train_switches_before": 1244,
+  "train_switches_after": 1066,
+  "test_idf1_before": 0.5764522083702921,
+  "test_idf1_after": 0.577560822252981,
+  "test_switches_before": 155,
+  "test_switches_after": 134,
+  "all_idf1_before": 0.5516369745734288,
+  "all_idf1_after": 0.565163698789316,
+  "all_switches_before": 1399,
+  "all_switches_after": 1200
 }

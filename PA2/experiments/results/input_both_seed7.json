@@ -1,10 +1,11 @@
 {
-  "checkpoint": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/checkpoints/input_both_seed7_best.pt",
+  "checkpoint": "checkpoints/input_both_seed7_best.pt",
   "track": "b",
   "input": "both",
   "cell": "gru",
   "window": 16,
-  "loss": "contrastive",
+  "loss": "predictive",
+  "min_visibility": 0.25,
   "seed": 7,
-  "best_loss": 1.3264123549789875
+  "best_loss": 1.1548983531854347
 }

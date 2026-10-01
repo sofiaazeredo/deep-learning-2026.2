@@ -1,106 +1,135 @@
 {
   "question": "O modelo temporal absorve ou amplifica a falha do detector?",
+  "answer_split": "test",
   "answer": "amplifica (o IDF1 temporal cai mais que o do baseline)",
-  "levels": [
-    {
-      "level": "leve",
-      "ap_kept": 0.8154691991073013,
-      "idf1_baseline_kept": 0.8768561145714371,
-      "idf1_temporal_kept": 0.7901644749563193,
-      "temporal_vs_ap": -0.02530472415098206,
-      "temporal_vs_baseline": -0.08669163961511783
-    },
-    {
-      "level": "media",
-      "ap_kept": 0.5989086498932087,
-      "idf1_baseline_kept": 0.6097300967217654,
-      "idf1_temporal_kept": 0.5522606692423495,
-      "temporal_vs_ap": -0.04664798065085918,
-      "temporal_vs_baseline": -0.05746942747941586
-    },
-    {
-      "level": "forte",
-      "ap_kept": 0.2680458534112475,
-      "idf1_baseline_kept": 0.318040001016912,
-      "idf1_temporal_kept": 0.28227808579739594,
-      "temporal_vs_ap": 0.014232232386148458,
-      "temporal_vs_baseline": -0.03576191521951605
-    }
-  ],
+  "levels": {
+    "test": [
+      {
+        "level": "leve",
+        "ap_kept": 0.8625414069966402,
+        "idf1_baseline_kept": 0.9233364444965534,
+        "idf1_temporal_kept": 0.8361748088921577,
+        "temporal_vs_ap": -0.026366598104482497,
+        "temporal_vs_baseline": -0.08716163560439572
+      },
+      {
+        "level": "media",
+        "ap_kept": 0.6395735165877096,
+        "idf1_baseline_kept": 0.6076624062551849,
+        "idf1_temporal_kept": 0.6513376811106651,
+        "temporal_vs_ap": 0.011764164522955589,
+        "temporal_vs_baseline": 0.043675274855480284
+      },
+      {
+        "level": "forte",
+        "ap_kept": 0.3000681332258023,
+        "idf1_baseline_kept": 0.3160973948182878,
+        "idf1_temporal_kept": 0.3145144068957271,
+        "temporal_vs_ap": 0.014446273669924847,
+        "temporal_vs_baseline": -0.0015829879225606747
+      }
+    ],
+    "all": [
+      {
+        "level": "leve",
+        "ap_kept": 0.8542997108657889,
+        "idf1_baseline_kept": 0.876958015181102,
+        "idf1_temporal_kept": 0.797688450963915,
+        "temporal_vs_ap": -0.05661125990187388,
+        "temporal_vs_baseline": -0.0792695642171869
+      },
+      {
+        "level": "media",
+        "ap_kept": 0.6286079285852736,
+        "idf1_baseline_kept": 0.6102264758498845,
+        "idf1_temporal_kept": 0.6029230797964785,
+        "temporal_vs_ap": -0.025684848788795067,
+        "temporal_vs_baseline": -0.007303396053406019
+      },
+      {
+        "level": "forte",
+        "ap_kept": 0.28651817024442366,
+        "idf1_baseline_kept": 0.31882044171415536,
+        "idf1_temporal_kept": 0.29849089023715636,
+        "temporal_vs_ap": 0.011972719992732694,
+        "temporal_vs_baseline": -0.020329551476998997
+      }
+    ]
+  },
   "test": [
     {
       "split": "test",
       "level": "limpo",
-      "ap": 0.695151953028262,
-      "idf1_baseline": 0.5703713537148243,
-      "idf1_temporal": 0.5680289540472492,
-      "idsw_baseline": 167,
-      "idsw_temporal": 153
+      "ap": 0.694833359678954,
+      "idf1_baseline": 0.5695421784349053,
+      "idf1_temporal": 0.577560822252981,
+      "idsw_baseline": 176,
+      "idsw_temporal": 134
     },
     {
       "split": "test",
       "level": "leve",
-      "ap": 0.5815050476517682,
-      "idf1_baseline": 0.5263832060209388,
-      "idf1_temporal": 0.463840994584397,
-      "idsw_baseline": 189,
-      "idsw_temporal": 208
+      "ap": 0.5993225436856875,
+      "idf1_baseline": 0.525879050026907,
+      "idf1_temporal": 0.4829418101709838,
+      "idsw_baseline": 194,
+      "idsw_temporal": 180
     },
     {
       "split": "test",
       "level": "media",
-      "ap": 0.4302646054012661,
-      "idf1_baseline": 0.34656605998031864,
-      "idf1_temporal": 0.31835338161795745,
-      "idsw_baseline": 294,
-      "idsw_temporal": 351
+      "ap": 0.44439701529232145,
+      "idf1_baseline": 0.3460893706115744,
+      "idf1_temporal": 0.3761871266666257,
+      "idsw_baseline": 300,
+      "idsw_temporal": 281
     },
     {
       "split": "test",
       "level": "forte",
-      "ap": 0.19654060399228837,
-      "idf1_baseline": 0.18026500198849726,
-      "idf1_temporal": 0.17047905361021193,
-      "idsw_baseline": 510,
-      "idsw_temporal": 574
+      "ap": 0.20849734914187618,
+      "idf1_baseline": 0.18003079884240597,
+      "idf1_temporal": 0.18165119945710478,
+      "idsw_baseline": 527,
+      "idsw_temporal": 390
     }
   ],
   "all": [
     {
       "split": "all",
       "level": "limpo",
-      "ap": 0.6526604939385016,
-      "idf1_baseline": 0.5365573138961589,
-      "idf1_temporal": 0.5464165534177662,
-      "idsw_baseline": 1674,
-      "idsw_temporal": 1383
+      "ap": 0.6507461021726905,
+      "idf1_baseline": 0.5357897858656967,
+      "idf1_temporal": 0.565163698789316,
+      "idsw_baseline": 1787,
+      "idsw_temporal": 1200
     },
     {
       "split": "all",
       "level": "leve",
-      "ap": 0.5322245302810056,
-      "idf1_baseline": 0.47048356150787285,
-      "idf1_temporal": 0.4317589490387908,
-      "idsw_baseline": 1941,
-      "idsw_temporal": 1933
+      "ap": 0.5559322069331686,
+      "idf1_baseline": 0.469865147167089,
+      "idf1_temporal": 0.4508245554282862,
+      "idsw_baseline": 2034,
+      "idsw_temporal": 1699
     },
     {
       "split": "all",
       "level": "media",
-      "ap": 0.39088401526334265,
-      "idf1_baseline": 0.3271551428986756,
-      "idf1_temporal": 0.3017643714755936,
-      "idsw_baseline": 2657,
-      "idsw_temporal": 3037
+      "ap": 0.40906415932171575,
+      "idf1_baseline": 0.32695311282518835,
+      "idf1_temporal": 0.3407502378632237,
+      "idsw_baseline": 2841,
+      "idsw_temporal": 2500
     },
     {
       "split": "all",
       "level": "forte",
-      "ap": 0.17494293908555197,
-      "idf1_baseline": 0.17064668865716595,
-      "idf1_temporal": 0.15424141874677758,
-      "idsw_baseline": 3888,
-      "idsw_temporal": 4627
+      "ap": 0.18645058248821003,
+      "idf1_baseline": 0.17082073619563415,
+      "idf1_temporal": 0.16869621558134704,
+      "idsw_baseline": 4134,
+      "idsw_temporal": 3281
     }
   ]
 }

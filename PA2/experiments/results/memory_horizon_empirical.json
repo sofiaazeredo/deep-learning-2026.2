@@ -1,8 +1,20 @@
 {
-  "n_occlusions": 1111,
-  "n_survived": 118,
-  "survive_rate": 0.10621062106210621,
   "median_occlusion": 8.0,
-  "median_survived": 3.0,
-  "max_survived": 69
+  "n_occlusions": 1111,
+  "modelo": {
+    "n_scorable": 550,
+    "n_survived": 200,
+    "survive_rate": 0.36363636363636365,
+    "median_survived": 4.5,
+    "p90_survived": 20.0,
+    "max_survived": 71
+  },
+  "baseline": {
+    "n_scorable": 554,
+    "n_survived": 214,
+    "survive_rate": 0.3862815884476534,
+    "median_survived": 5.0,
+    "p90_survived": 20.0,
+    "max_survived": 174
+  }
 }

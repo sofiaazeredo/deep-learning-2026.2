@@ -1,44 +1,99 @@
-[
-  {
-    "gt_id": 68,
-    "frame": 114,
-    "prev_frame": 113,
-    "gap": 1,
-    "pred_from": 66,
-    "pred_to": 67,
-    "scene": "04",
-    "camera": "static",
-    "occlusion": 19.5,
-    "density": 45.29238095238095,
-    "diagnosis": "Cena 04 (densidade 45.3): depois de um miss de 1 quadro(s) a apar\u00eancia casou o gt 68 com o id 67 em vez de 66. Recortes de pedestres pr\u00f3ximos s\u00e3o parecidos; o cosseno ganha do IoU da \u00faltima caixa.",
-    "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_1.png"
-  },
-  {
-    "gt_id": 58,
-    "frame": 392,
-    "prev_frame": 368,
-    "gap": 24,
-    "pred_from": 407,
-    "pred_to": 437,
-    "scene": "02",
-    "camera": "static",
-    "occlusion": 29.0,
-    "density": 30.968333333333334,
-    "diagnosis": "Cena 02: o gt 58 some 24 quadros e volta com outro id. A janela de BPTT \u00e9 T=16 e max_age=20; se o buraco passa do que o estado da GRU ainda distingue, a track morre ou a apar\u00eancia pega outra pessoa.",
-    "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_2.png"
-  },
-  {
-    "gt_id": 3,
-    "frame": 495,
-    "prev_frame": 479,
-    "gap": 16,
-    "pred_from": 76,
-    "pred_to": 101,
-    "scene": "09",
-    "camera": "static",
-    "occlusion": 11.5,
-    "density": 10.142857142857142,
-    "diagnosis": "Cena 09: o gt 3 some 16 quadros e volta com outro id. A janela de BPTT \u00e9 T=16 e max_age=20; se o buraco passa do que o estado da GRU ainda distingue, a track morre ou a apar\u00eancia pega outra pessoa.",
-    "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_3.png"
-  }
-]
+{
+  "categories": [
+    {
+      "split": "train",
+      "kind": "morreu",
+      "n": 78,
+      "share": 0.06270096463022508,
+      "median_gap": 44.5
+    },
+    {
+      "split": "train",
+      "kind": "nao_recasou",
+      "n": 495,
+      "share": 0.3979099678456592,
+      "median_gap": 3.0
+    },
+    {
+      "split": "train",
+      "kind": "troca",
+      "n": 671,
+      "share": 0.5393890675241158,
+      "median_gap": 2.0
+    },
+    {
+      "split": "test",
+      "kind": "morreu",
+      "n": 17,
+      "share": 0.10967741935483871,
+      "median_gap": 70.0
+    },
+    {
+      "split": "test",
+      "kind": "nao_recasou",
+      "n": 59,
+      "share": 0.38064516129032255,
+      "median_gap": 3.0
+    },
+    {
+      "split": "test",
+      "kind": "troca",
+      "n": 79,
+      "share": 0.5096774193548387,
+      "median_gap": 2.0
+    }
+  ],
+  "failures": [
+    {
+      "gt_id": 17,
+      "frame": 357,
+      "prev_frame": 300,
+      "gap": 57,
+      "pred_from": 92,
+      "pred_to": 134,
+      "scene": "02",
+      "split": "train",
+      "camera": "static",
+      "occlusion": 29.0,
+      "density": 30.968333333333334,
+      "kind": "morreu",
+      "pred_from_last": 300,
+      "diagnosis": "Cena 02 (static, densidade 31.0/quadro): o gt 17 ficou 57 quadros sem casamento e voltou como id 134 (era 92). O buraco de 57 passa de max_age=20: a track 92 morreu antes de a pessoa voltar, ent\u00e3o nenhuma mem\u00f3ria \u2014 nem a da GRU \u2014 tinha como casar. O buraco (57) \u00e9 maior que a janela de BPTT (T=16): no treino a mem\u00f3ria nunca recebeu sinal de supervis\u00e3o atravessando um buraco desse tamanho.",
+      "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_1.png"
+    },
+    {
+      "gt_id": 23,
+      "frame": 70,
+      "prev_frame": 18,
+      "gap": 52,
+      "pred_from": 15,
+      "pred_to": 80,
+      "scene": "10",
+      "split": "train",
+      "camera": "moving",
+      "occlusion": 7.0,
+      "density": 19.631498470948014,
+      "kind": "nao_recasou",
+      "pred_from_last": 34,
+      "diagnosis": "Cena 10 (moving, densidade 19.6/quadro): o gt 23 ficou 52 quadros sem casamento e voltou como id 80 (era 15). A track 15 ainda existia, mas na volta nem o IoU da \u00faltima caixa nem o cosseno dentro do port\u00e3o a aceitaram; nasceu um id novo. O id 15 continuou saindo at\u00e9 o quadro 34, em outra pessoa: a track derivou durante o buraco. O buraco (52) \u00e9 maior que a janela de BPTT (T=16): no treino a mem\u00f3ria nunca recebeu sinal de supervis\u00e3o atravessando um buraco desse tamanho.",
+      "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_2.png"
+    },
+    {
+      "gt_id": 95,
+      "frame": 650,
+      "prev_frame": 601,
+      "gap": 49,
+      "pred_from": 86,
+      "pred_to": 71,
+      "scene": "04",
+      "split": "train",
+      "camera": "static",
+      "occlusion": 19.5,
+      "density": 45.29238095238095,
+      "kind": "troca",
+      "pred_from_last": 650,
+      "diagnosis": "Cena 04 (static, densidade 45.3/quadro): o gt 95 ficou 49 quadros sem casamento e voltou como id 71 (era 86). O id 71 j\u00e1 existia: a detec\u00e7\u00e3o da volta foi para a track de outra pessoa (troca), n\u00e3o para uma track nova. O buraco (49) \u00e9 maior que a janela de BPTT (T=16): no treino a mem\u00f3ria nunca recebeu sinal de supervis\u00e3o atravessando um buraco desse tamanho.",
+      "figure": "/home/bryan/FGV/6_periodo/deep_learning/deep-learning-2026.2/PA2/experiments/figures/failures_3.png"
+    }
+  ]
+}
