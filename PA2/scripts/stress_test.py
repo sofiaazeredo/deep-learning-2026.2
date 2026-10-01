@@ -50,10 +50,12 @@ def detections_ap(gt, dets, gt_all):
     return average_precision(gt, cleaned)
 
 
-def run_one(dets, embeddings, info, model=None, miss_prefer_iou=False):
+def run_one(dets, embeddings, info, model=None, miss_prefer_iou=False,
+            prefer_confirmed=False):
     tracker = Tracker(**TRACKER_KW, motion=model,
                       image_size=(info["im_width"], info["im_height"]),
-                      miss_prefer_iou=miss_prefer_iou)
+                      miss_prefer_iou=miss_prefer_iou,
+                      prefer_confirmed=prefer_confirmed)
     tracks = tracker.run(dets, embeddings=embeddings,
                          image_size=(info["im_width"], info["im_height"]))
     return drop_distractor_matches(tracks, info["gt_all"])
@@ -96,9 +98,10 @@ def detector_stress(checkpoint, name, device, seed):
             ap, details = detections_ap(gt, dets, info["gt_all"])
             baseline = evaluate_sequence(
                 gt, run_one(dets, None, info))
+            # O modelo final: Trilha B + a correção da Parte 4.
             temporal = evaluate_sequence(
                 gt, run_one(dets, embeddings, info, model=model,
-                            miss_prefer_iou=True))
+                            miss_prefer_iou=True, prefer_confirmed=True))
             for tracker_name, score in (("baseline", baseline),
                                         ("temporal", temporal)):
                 row = {
@@ -149,31 +152,37 @@ def detector_stress(checkpoint, name, device, seed):
         writer.writeheader()
         writer.writerows(summary_rows)
 
-    clean = next(row for row in summary_rows
-                 if row["split"] == "all" and row["level"] == "limpo")
-    verdict = []
-    for row in summary_rows:
-        if row["split"] != "all" or row["level"] == "limpo":
-            continue
-        ap_keep = row["ap"] / clean["ap"] if clean["ap"] else float("nan")
-        base_keep = (row["idf1_baseline"] / clean["idf1_baseline"]
-                     if clean["idf1_baseline"] else float("nan"))
-        temp_keep = (row["idf1_temporal"] / clean["idf1_temporal"]
-                     if clean["idf1_temporal"] else float("nan"))
-        verdict.append({
-            "level": row["level"],
-            "ap_kept": ap_keep,
-            "idf1_baseline_kept": base_keep,
-            "idf1_temporal_kept": temp_keep,
-            "temporal_vs_ap": temp_keep - ap_keep,
-            "temporal_vs_baseline": temp_keep - base_keep,
-        })
+    # O quanto cada curva mantém do nível limpo, POR SPLIT: as quedas do
+    # teste e das 7 cenas não se misturam numa mesma frase.
+    verdict = {}
+    for split_name in ("test", "all"):
+        clean = next(row for row in summary_rows
+                     if row["split"] == split_name and row["level"] == "limpo")
+        verdict[split_name] = []
+        for row in summary_rows:
+            if row["split"] != split_name or row["level"] == "limpo":
+                continue
+            ap_keep = row["ap"] / clean["ap"] if clean["ap"] else float("nan")
+            base_keep = (row["idf1_baseline"] / clean["idf1_baseline"]
+                         if clean["idf1_baseline"] else float("nan"))
+            temp_keep = (row["idf1_temporal"] / clean["idf1_temporal"]
+                         if clean["idf1_temporal"] else float("nan"))
+            verdict[split_name].append({
+                "level": row["level"],
+                "ap_kept": ap_keep,
+                "idf1_baseline_kept": base_keep,
+                "idf1_temporal_kept": temp_keep,
+                "temporal_vs_ap": temp_keep - ap_keep,
+                "temporal_vs_baseline": temp_keep - base_keep,
+            })
 
-    absorbs = all(item["temporal_vs_baseline"] >= -0.02 for item in verdict)
+    absorbs = all(item["temporal_vs_baseline"] >= -0.02
+                  for item in verdict["test"])
     summary = {
         "question": (
             "O modelo temporal absorve ou amplifica a falha do detector?"
         ),
+        "answer_split": "test",
         "answer": (
             "absorve (cai menos que o baseline, e não mais que o AP)"
             if absorbs else
@@ -208,11 +217,12 @@ def detector_stress(checkpoint, name, device, seed):
     fig.savefig(fig_path, dpi=140)
     plt.close(fig)
 
-    print(f"resposta  {summary['answer']}")
-    for item in verdict:
-        print(f"  {item['level']:<5}  AP×{item['ap_kept']:.2f}  "
-              f"base×{item['idf1_baseline_kept']:.2f}  "
-              f"temp×{item['idf1_temporal_kept']:.2f}")
+    print(f"resposta (teste)  {summary['answer']}")
+    for split_name in ("test", "all"):
+        for item in verdict[split_name]:
+            print(f"  {split_name:<4} {item['level']:<5}  AP×{item['ap_kept']:.2f}  "
+                  f"base×{item['idf1_baseline_kept']:.2f}  "
+                  f"temp×{item['idf1_temporal_kept']:.2f}")
     print(f"gravado {csv_path}")
     print(f"gravado {fig_path}")
     return summary
@@ -232,8 +242,9 @@ def main():
         raise SystemExit("esta entrega fez o eixo de qualidade do detector")
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    checkpoint = args.checkpoint or str(
-        ROOT / "checkpoints" / "input_appearance_seed42_best.pt")
+    from src.inference import resolve_checkpoint
+
+    checkpoint = resolve_checkpoint(args.checkpoint or None)
     name = args.name or "stress_detector"
     detector_stress(checkpoint, name, device, args.seed)
 

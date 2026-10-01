@@ -496,6 +496,43 @@ def drop_distractor_matches(pred_tracks, gt_rows, threshold=0.5):
     return [row for i, row in enumerate(pred_tracks) if i not in drop]
 
 
+def occlusion_survival(gt_tracks, pred_tracks, threshold=0.5,
+                       visibility_threshold=0.25):
+    """
+    Sobrevivência da identidade através de cada oclusão (Eixo 3 da Parte 3,
+    horizonte empírico da Parte 4).
+
+    Oclusão = corrida de quadros com visibility < limiar de uma identidade
+    (no MOT17 a pessoa escondida continua no gt, marcada pela visibilidade).
+    Olha o id previsto casado (CLEAR MOT) no último quadro antes da oclusão
+    e no primeiro depois:
+      scorable  casada dos dois lados (senão não há o que comparar);
+      survived  scorable e o mesmo id previsto nos dois lados.
+
+    Devolve uma lista de {gt_id, start, end, length, scorable, survived}.
+    """
+
+    from src.dataset import occlusion_intervals
+
+    gt_frames, matches = _clear_mot_matches(gt_tracks, pred_tracks, threshold)
+    events = []
+
+    for gt_id, intervals in occlusion_intervals(
+            gt_tracks, visibility_threshold=visibility_threshold).items():
+        frames = gt_frames.get(gt_id, [])
+        for start, end, length in intervals:
+            before = next((matches[f][gt_id] for f in reversed(frames)
+                           if f < start and gt_id in matches[f]), None)
+            after = next((matches[f][gt_id] for f in frames
+                          if f > end and gt_id in matches[f]), None)
+            scorable = before is not None and after is not None
+            events.append({"gt_id": gt_id, "start": start, "end": end,
+                           "length": length, "scorable": scorable,
+                           "survived": scorable and before == after})
+
+    return events
+
+
 def evaluate_sequence(gt_tracks, pred_tracks, threshold=0.5):
     """
     Todas as métricas acima numa chamada, no formato que os scripts gravam em

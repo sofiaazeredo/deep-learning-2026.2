@@ -1,9 +1,16 @@
 """
 Parte 4 — a correção.
 
-Diagnóstico da galeria: depois de um miss curto em cena densa a aparência
-casa o pedestre errado. A mudança: nas tracks perdidas, tentar primeiro o
-IoU da última caixa (como o baseline); só o que sobra vai para o cosseno.
+Diagnóstico (scripts/failure_gallery.py, tipos medidos em TODOS os switches
+do modelo final, no treino): 34% dos switches são "não recasou" com buraco
+mediano de 2 quadros. A track confirmada perde a detecção por um quadro, a
+detecção sobrante vira uma track nova, e no quadro seguinte essa tentativa —
+"vista no quadro anterior" — casa antes da confirmada, que só concorre como
+perdida. A duplicata ganha da track verdadeira.
+
+A mudança que o diagnóstico sugere (Tracker(prefer_confirmed=True)): as
+tentativas só casam depois das confirmadas, vivas e perdidas. Antes/depois
+calculados aqui mesmo, no mesmo checkpoint; a decisão é pelo treino.
 """
 
 import sys
@@ -20,7 +27,7 @@ import pandas as pd
 import torch
 
 from src.appearance import CropEncoder, cache_sequence_embeddings
-from src.dataset import SCENES, load_sequence
+from src.dataset import SCENES, TEST_SCENES, load_sequence
 from src.detection import public_detections
 from src.metrics import drop_distractor_matches, evaluate_sequence
 from src.model import load_checkpoint
@@ -35,7 +42,7 @@ def embeddings_for_detections(dets, cache):
     return [cache[(int(row[0]), index)] for index, row in enumerate(dets)]
 
 
-def run_all(model, encoder, device, miss_prefer_iou):
+def run_all(model, encoder, device, prefer_confirmed):
     rows = []
     metrics = []
     for scene in SCENES:
@@ -48,18 +55,20 @@ def run_all(model, encoder, device, miss_prefer_iou):
                           matcher="hungarian", motion=model,
                           appearance_threshold=0.5,
                           image_size=(info["im_width"], info["im_height"]),
-                          miss_prefer_iou=miss_prefer_iou)
+                          prefer_confirmed=prefer_confirmed)
         tracks = tracker.run(dets, embeddings=embeddings,
                              image_size=(info["im_width"], info["im_height"]))
-        tracks = drop_distractor_matches(tracks, info["gt_all"])
-        score = evaluate_sequence(gt, tracks)
+        # A métrica vê as predições sem os distractores; o CSV guarda as
+        # trajetórias cruas, como os outros scripts (quem reavaliar o arquivo
+        # tira os distractores uma vez só).
+        score = evaluate_sequence(gt, drop_distractor_matches(tracks, info["gt_all"]))
         score.update({"sequence": scene, "split": info.get("camera"),
                       "camera": info["camera"], "occlusion": info["occlusion"],
                       "density": info["density"]})
-        score["split"] = "test" if scene in {"09", "11"} else "train"
+        score["split"] = "test" if scene in TEST_SCENES else "train"
         metrics.append(score)
         print(f"{scene}  IDF1={score['idf1']:.3f}  IDsw={score['id_switches']}  "
-              f"prefer_iou={miss_prefer_iou}")
+              f"prefer_confirmed={prefer_confirmed}")
         for frame, identity, x, y, w, h in tracks:
             rows.append((scene, frame, identity, x, y, w, h))
     return rows, metrics
@@ -73,29 +82,31 @@ def main():
     args = parser.parse_args()
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    checkpoint = args.checkpoint or str(
-        ROOT / "checkpoints" / "input_appearance_seed42_best.pt")
+    from src.inference import resolve_checkpoint
+
+    checkpoint = resolve_checkpoint(args.checkpoint or None)
     model, payload = load_checkpoint(checkpoint, device=device)
     embed_dim = payload.get("kwargs", {}).get("embed_dim", 128)
     encoder = CropEncoder(embed_dim=embed_dim, freeze=True).to(device)
     if "encoder_proj" in payload:
         encoder.proj.load_state_dict(payload["encoder_proj"])
 
-    before_csv = RESULTS / "input_appearance_seed42_per_sequence.csv"
-    if before_csv.exists():
-        before = pd.read_csv(before_csv)
-        before["sequence"] = before["sequence"].astype(str).str.zfill(2)
-    else:
-        _, before_rows = run_all(model, encoder, device, False)
-        before = pd.DataFrame(before_rows)
-
-    _, after_metrics = run_all(model, encoder, device, True)
+    # Os dois lados rodam aqui: ler um CSV antigo como "antes" misturaria
+    # versões do tracker.
+    _, before_metrics = run_all(model, encoder, device, False)
+    before = pd.DataFrame(before_metrics)
+    before["sequence"] = before["sequence"].astype(str).str.zfill(2)
+    after_rows, after_metrics = run_all(model, encoder, device, True)
     after = pd.DataFrame(after_metrics)
     after["sequence"] = after["sequence"].astype(str).str.zfill(2)
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
     after.to_csv(RESULTS / f"{args.name}_per_sequence.csv", index=False)
+    with open(RESULTS / f"{args.name}_tracks.csv", "w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["sequence", "frame", "id", "x", "y", "w", "h"])
+        writer.writerows(after_rows)
 
     merged = before[["sequence", "idf1", "id_switches", "id_count_error"]].merge(
         after[["sequence", "idf1", "id_switches", "id_count_error"]],
@@ -124,25 +135,36 @@ def main():
     fig.savefig(FIGURES / f"{args.name}_before_after.png", dpi=140)
     plt.close(fig)
 
-    test_b = after[after["split"] == "test"]
-    test_a = before[before["sequence"].isin(["09", "11"])]
     summary = {
         "diagnosis": (
-            "Depois de um miss curto em cena densa a aparência casa o "
-            "pedestre errado. Correção: nas tracks perdidas, IoU da última "
-            "caixa primeiro; o cosseno só no que sobra."
+            "34% dos ID switches do modelo final (treino) são 'não recasou' "
+            "com buraco mediano de 2 quadros: a duplicata nascida no quadro "
+            "do miss casa antes da track confirmada. Correção: tentativas só "
+            "casam depois das confirmadas (prefer_confirmed)."
         ),
-        "test_idf1_before": float(test_a["idf1"].mean()),
-        "test_idf1_after": float(test_b["idf1"].mean()),
+        "decided_on": "train",
+    }
+    for split in ("train", "test"):
+        b = before[before["split"] == split]
+        a = after[after["split"] == split]
+        summary[f"{split}_idf1_before"] = float(b["idf1"].mean())
+        summary[f"{split}_idf1_after"] = float(a["idf1"].mean())
+        summary[f"{split}_switches_before"] = int(b["id_switches"].sum())
+        summary[f"{split}_switches_after"] = int(a["id_switches"].sum())
+    summary.update({
         "all_idf1_before": float(before["idf1"].mean()),
         "all_idf1_after": float(after["idf1"].mean()),
         "all_switches_before": int(before["id_switches"].sum()),
         "all_switches_after": int(after["id_switches"].sum()),
-    }
+    })
     with open(RESULTS / f"{args.name}.json", "w") as handle:
         json.dump(summary, handle, indent=2)
+    print(f"treino IDF1 {summary['train_idf1_before']:.3f} → "
+          f"{summary['train_idf1_after']:.3f}  IDsw "
+          f"{summary['train_switches_before']} → {summary['train_switches_after']}")
     print(f"teste  IDF1 {summary['test_idf1_before']:.3f} → "
-          f"{summary['test_idf1_after']:.3f}")
+          f"{summary['test_idf1_after']:.3f}  IDsw "
+          f"{summary['test_switches_before']} → {summary['test_switches_after']}")
     print(f"todas  IDF1 {summary['all_idf1_before']:.3f} → "
           f"{summary['all_idf1_after']:.3f}  "
           f"IDsw {summary['all_switches_before']} → "
