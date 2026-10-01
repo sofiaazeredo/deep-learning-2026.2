@@ -25,13 +25,17 @@ RESULTS = Path(__file__).resolve().parents[1] / "experiments" / "results"
 
 
 def resolve_checkpoint(path):
-    if path:
-        return path
-    best = RESULTS / "best_model.json"
-    if not best.exists():
+    """
+    --checkpoint ou o modelo final de best_model.json, resolvido como na
+    inferência (caminho relativo à raiz do PA2, ou o nome em checkpoints/
+    se o caminho gravado for de outra máquina).
+    """
+
+    from src.inference import resolve_checkpoint as resolve
+
+    if not path and not (RESULTS / "best_model.json").exists():
         raise SystemExit("passe --checkpoint ou grave experiments/results/best_model.json")
-    with open(best) as handle:
-        return json.load(handle)["checkpoint"]
+    return resolve(path or None)
 
 
 def embeddings_for_detections(dets, cache):
@@ -53,8 +57,18 @@ def main():
     parser.add_argument("--max-age", type=int, default=20)
     parser.add_argument("--min-hits", type=int, default=2)
     parser.add_argument("--appearance-threshold", type=float, default=0.5)
-    parser.add_argument("--miss-prefer-iou", action="store_true",
-                        help="correção da Parte 4: IoU da última caixa depois do miss")
+    parser.add_argument("--miss-prefer-iou", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="IoU da última caixa nas tracks perdidas antes do "
+                             "cosseno (padrão; --no-miss-prefer-iou desliga)")
+    parser.add_argument("--prefer-confirmed", action=argparse.BooleanOptionalAction,
+                        default=False,
+                        help="correção da Parte 4: tentativas casam depois das "
+                             "confirmadas (desligada = modelo das Partes 2 e 3)")
+    parser.add_argument("--gate-growth", type=float, default=0.6,
+                        help="portão: a última caixa cresce isto por quadro perdido")
+    parser.add_argument("--gate-iou", type=float, default=0.1,
+                        help="portão: IoU mínimo com a caixa aumentada")
     parser.add_argument("--device", default=None)
     parser.add_argument("--name", required=True)
     args = parser.parse_args()
@@ -97,7 +111,10 @@ def main():
                           matcher="hungarian", motion=model,
                           appearance_threshold=args.appearance_threshold,
                           image_size=(info["im_width"], info["im_height"]),
-                          miss_prefer_iou=args.miss_prefer_iou)
+                          miss_prefer_iou=args.miss_prefer_iou,
+                          gate_growth=args.gate_growth,
+                          gate_iou=args.gate_iou,
+                          prefer_confirmed=args.prefer_confirmed)
         tracks = tracker.run(dets, embeddings=embeddings,
                              image_size=(info["im_width"], info["im_height"]))
         print(f"{scene}  {info['camera']:<7}  {len(tracks)} caixas  "

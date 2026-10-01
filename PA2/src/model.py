@@ -23,6 +23,26 @@ CELLS = ("rnn", "lstm", "gru")
 _CELL = {"rnn": nn.RNN, "lstm": nn.LSTM, "gru": nn.GRU}
 KIND_TO_NAME = {"appearance": "appearance", "geometry": "motion",
                 "both": "fusion"}
+# "delta": a cabeça de geometria prevê o deslocamento codificado
+# (src.boxes.encode_delta) a partir da caixa atual + velocidade (8 de
+# entrada). "absolute": a versão antiga, que regredia a caixa normalizada
+# direto (4 de entrada) e perdia para "copiar a última caixa" — só para
+# carregar os checkpoints velhos.
+PARAMETERIZATIONS = ("delta", "absolute")
+
+
+def _box_feature_dim(parameterization):
+    if parameterization not in PARAMETERIZATIONS:
+        raise ValueError(f"parametrização desconhecida: {parameterization}")
+    return 8 if parameterization == "delta" else 4
+
+
+def _decode_box(current, raw, parameterization):
+    from src.boxes import decode_delta
+
+    if parameterization == "delta":
+        return decode_delta(current, raw)
+    return raw
 
 
 def _init_state(cell, hidden, batch, device):
@@ -41,15 +61,17 @@ def _split_state(new_state, index, cell):
 
 class MotionRNN(nn.Module):
     """
-    Cabeça de geometria do Eixo 3. Recebe a caixa normalizada e prevê a
-    caixa do quadro seguinte. `predict_sigma` e `bidirectional` ficam para
-    outros eixos.
+    Cabeça de geometria do Eixo 3. Recebe a caixa atual + a velocidade
+    codificada (src.boxes.motion_features) e prevê a caixa do quadro
+    seguinte: a saída é o deslocamento codificado, e `step` já devolve a
+    caixa absoluta. `predict_sigma` e `bidirectional` ficam para outros
+    eixos.
     """
 
     kind = "geometry"
 
     def __init__(self, cell="gru", hidden=128, box_dim=4, predict_sigma=False,
-                 bidirectional=False):
+                 bidirectional=False, parameterization="delta"):
         super().__init__()
         if cell not in _CELL:
             raise ValueError(f"célula desconhecida: {cell}")
@@ -61,26 +83,34 @@ class MotionRNN(nn.Module):
         self.cell = cell
         self.hidden = int(hidden)
         self.box_dim = int(box_dim)
-        self.rnn = _CELL[cell](self.box_dim, self.hidden, batch_first=True)
+        self.parameterization = parameterization
+        self.feature_dim = _box_feature_dim(parameterization)
+        self.rnn = _CELL[cell](self.feature_dim, self.hidden, batch_first=True)
         self.proj = nn.Linear(self.hidden, self.box_dim)
 
     def init_state(self, batch=1, device="cpu"):
         return _init_state(self.cell, self.hidden, batch, device)
 
-    def step(self, box, state):
-        if box.dim() == 1:
-            box = box.unsqueeze(0)
-        output, state = self.rnn(box.unsqueeze(1), state)
-        return self.proj(output.squeeze(1)), state
+    def step(self, features, state):
+        if features.dim() == 1:
+            features = features.unsqueeze(0)
+        output, state = self.rnn(features.unsqueeze(1), state)
+        raw = self.proj(output.squeeze(1))
+        return _decode_box(features[:, :4], raw, self.parameterization), state
 
 
 class AppearanceRNN(nn.Module):
     """
     Trilha B. Agrega embeddings de recortes ao longo do tempo num estado de
-    aparência por track.
+    aparência por track (a memória, saída de `step`).
+
+    A detecção nova entra na associação pela `query`, uma cabeça própria e
+    sem estado. Memória e consulta vivem no mesmo espaço porque a perda
+    preditiva treina uma contra a outra — não por construção.
     """
 
     kind = "appearance"
+    has_query = True
 
     def __init__(self, cell="gru", embed_dim=128, hidden=128):
         super().__init__()
@@ -92,9 +122,19 @@ class AppearanceRNN(nn.Module):
         self.hidden = int(hidden)
         self.rnn = _CELL[cell](self.embed_dim, self.hidden, batch_first=True)
         self.proj = nn.Linear(self.hidden, self.embed_dim)
+        self.query_head = nn.Linear(self.embed_dim, self.embed_dim)
 
     def init_state(self, batch=1, device="cpu"):
         return _init_state(self.cell, self.hidden, batch, device)
+
+    def query(self, embedding):
+        """
+        Consulta de um recorte: embedding (B, D) -> vetor L2 (B, D).
+        """
+
+        if embedding.dim() == 1:
+            embedding = embedding.unsqueeze(0)
+        return F.normalize(self.query_head(embedding), dim=-1)
 
     def step(self, embedding, state):
         """
@@ -115,8 +155,10 @@ class FusionRNN(nn.Module):
     """
 
     kind = "both"
+    has_query = True
 
-    def __init__(self, cell="gru", embed_dim=128, hidden=128, box_dim=4):
+    def __init__(self, cell="gru", embed_dim=128, hidden=128, box_dim=4,
+                 parameterization="delta"):
         super().__init__()
         if cell not in _CELL:
             raise ValueError(f"célula desconhecida: {cell}")
@@ -125,13 +167,25 @@ class FusionRNN(nn.Module):
         self.embed_dim = int(embed_dim)
         self.hidden = int(hidden)
         self.box_dim = int(box_dim)
-        self.rnn = _CELL[cell](self.embed_dim + self.box_dim, self.hidden,
+        self.parameterization = parameterization
+        self.feature_dim = self.embed_dim + _box_feature_dim(parameterization)
+        self.rnn = _CELL[cell](self.feature_dim, self.hidden,
                                batch_first=True)
         self.proj_emb = nn.Linear(self.hidden, self.embed_dim)
         self.proj_box = nn.Linear(self.hidden, self.box_dim)
+        self.query_head = nn.Linear(self.embed_dim, self.embed_dim)
 
     def init_state(self, batch=1, device="cpu"):
         return _init_state(self.cell, self.hidden, batch, device)
+
+    def query(self, embedding):
+        """
+        Consulta de um recorte: só a parte de aparência (B, D), sem a caixa.
+        """
+
+        if embedding.dim() == 1:
+            embedding = embedding.unsqueeze(0)
+        return F.normalize(self.query_head(embedding), dim=-1)
 
     def step(self, features, state):
         if features.dim() == 1:
@@ -139,7 +193,8 @@ class FusionRNN(nn.Module):
         output, state = self.rnn(features.unsqueeze(1), state)
         hidden = output.squeeze(1)
         vector = F.normalize(self.proj_emb(hidden), dim=-1)
-        box = self.proj_box(hidden)
+        current = features[:, self.embed_dim:self.embed_dim + 4]
+        box = _decode_box(current, self.proj_box(hidden), self.parameterization)
         return (vector, box), state
 
 
@@ -161,12 +216,14 @@ def build_model(name, **kwargs):
                    if key in kwargs}
         return AppearanceRNN(**allowed)
     if name in {"motion", "geometry"}:
-        allowed = {key: kwargs[key] for key in ("cell", "hidden", "box_dim")
+        allowed = {key: kwargs[key]
+                   for key in ("cell", "hidden", "box_dim", "parameterization")
                    if key in kwargs}
         return MotionRNN(**allowed)
     if name in {"fusion", "both"}:
         allowed = {key: kwargs[key]
-                   for key in ("cell", "embed_dim", "hidden", "box_dim")
+                   for key in ("cell", "embed_dim", "hidden", "box_dim",
+                               "parameterization")
                    if key in kwargs}
         return FusionRNN(**allowed)
     raise ValueError(f"modelo desconhecido: {name}")
@@ -174,8 +231,21 @@ def build_model(name, **kwargs):
 
 def load_checkpoint(path, device="cpu"):
     payload = torch.load(path, map_location=device, weights_only=False)
-    model = build_model(payload.get("name", "appearance"), **payload["kwargs"])
-    model.load_state_dict(payload["state_dict"])
+    kwargs = dict(payload["kwargs"])
+    if (payload.get("name") in {"motion", "geometry", "fusion", "both"}
+            and "parameterization" not in kwargs):
+        # Checkpoint anterior à cabeça de deslocamento.
+        kwargs["parameterization"] = "absolute"
+    model = build_model(payload.get("name", "appearance"), **kwargs)
+    missing, unexpected = model.load_state_dict(payload["state_dict"],
+                                                strict=False)
+    if unexpected or any(not key.startswith("query_head") for key in missing):
+        raise RuntimeError(f"checkpoint incompatível: faltam {missing}, "
+                           f"sobram {unexpected}")
+    if missing:
+        # Checkpoint anterior à cabeça de consulta: o tracker usa a consulta
+        # antiga (um passo da GRU a partir do estado zero).
+        model.has_query = False
     model.to(device)
     model.eval()
     return model, payload
@@ -184,6 +254,11 @@ def load_checkpoint(path, device="cpu"):
 def save_checkpoint(path, model, kwargs, extra=None):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    kwargs = dict(kwargs)
+    if hasattr(model, "parameterization"):
+        # Gravado sempre: sem isso o loader trataria o checkpoint como da
+        # cabeça antiga (absoluta).
+        kwargs["parameterization"] = model.parameterization
     name = KIND_TO_NAME.get(getattr(model, "kind", "appearance"), "appearance")
     if extra and extra.get("name"):
         name = extra["name"]

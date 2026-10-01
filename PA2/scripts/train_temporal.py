@@ -19,9 +19,14 @@ import numpy as np
 import torch
 
 from src.appearance import CropEncoder, cache_sequence_embeddings
-from src.boxes import xywh_to_norm
+from src.boxes import motion_features, xywh_to_norm
 from src.dataset import SCENES, TRAIN_SCENES, TrackWindowDataset
-from src.losses import ContrastiveIdentityLoss, SmoothL1BoxLoss, TripletIdentityLoss
+from src.losses import (
+    ContrastiveIdentityLoss,
+    PredictiveContrastiveLoss,
+    SmoothL1BoxLoss,
+    TripletIdentityLoss,
+)
 from src.model import CELLS, build_model, save_checkpoint
 from src.training import REGIMES, truncated_bptt
 
@@ -51,12 +56,26 @@ def window_appearance(item, cache):
     return tensors
 
 
+def _motion_steps(steps, width, height):
+    """
+    [(frame, caixa xywh)] -> [(frame, caixa normalizada + velocidade por
+    quadro desde a observação anterior)], a entrada da cabeça de geometria.
+    """
+
+    prepared, prev, prev_frame = [], None, None
+    for frame, box in steps:
+        cur = torch.as_tensor(xywh_to_norm(box, width, height))
+        gap = 1 if prev_frame is None else int(frame) - prev_frame
+        prepared.append((int(frame), motion_features(prev, cur, gap=gap)))
+        prev, prev_frame = cur, int(frame)
+    return prepared
+
+
 def window_geometry(item):
     width, height = item["im_width"], item["im_height"]
     tensors = {}
     for identity, steps in item["identities"].items():
-        prepared = [(int(frame), torch.as_tensor(xywh_to_norm(box, width, height)))
-                    for frame, box in steps]
+        prepared = _motion_steps(steps, width, height)
         if prepared:
             tensors[int(identity)] = prepared
     return tensors
@@ -66,14 +85,13 @@ def window_both(item, cache):
     width, height = item["im_width"], item["im_height"]
     tensors = {}
     for identity, steps in item["identities"].items():
+        visible = [(frame, box) for frame, box in steps
+                   if cache.get((int(frame), int(identity))) is not None]
         prepared = []
-        for frame, box in steps:
-            vector = cache.get((int(frame), int(identity)))
-            if vector is None:
-                continue
-            feat = np.concatenate([np.asarray(vector, dtype=np.float32),
-                                   xywh_to_norm(box, width, height)])
-            prepared.append((int(frame), torch.as_tensor(feat)))
+        for (frame, feat) in _motion_steps(visible, width, height):
+            vector = torch.as_tensor(np.asarray(cache[(frame, int(identity))],
+                                                dtype=np.float32))
+            prepared.append((frame, torch.cat([vector, feat])))
         if prepared:
             tensors[int(identity)] = prepared
     return tensors
@@ -98,8 +116,13 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden", type=int, default=128)
     parser.add_argument("--embed-dim", type=int, default=128)
-    parser.add_argument("--loss", choices=["contrastive", "triplet"],
-                        default="contrastive")
+    parser.add_argument("--loss", choices=["predictive", "contrastive", "triplet"],
+                        default="predictive",
+                        help="predictive: memória contra recortes futuros "
+                             "(padrão); contrastive/triplet: as perdas antigas, "
+                             "que a GRU vence copiando o primeiro recorte")
+    parser.add_argument("--min-visibility", type=float, default=0.25,
+                        help="tira da janela os recortes de pessoa escondida")
     parser.add_argument("--device", default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--name", required=True)
@@ -129,8 +152,13 @@ def main():
             print(f"cache det {scene}...", flush=True)
             cache_sequence_embeddings(scene, encoder, kind="det", device=device)
 
+    # O filtro de visibilidade é por causa do RECORTE (de pessoa escondida
+    # ele mostra o oclusor). A caixa do gt de quem está escondido continua
+    # certa, então a geometria pura treina com todos os quadros.
+    min_visibility = 0.0 if args.input == "geometry" else args.min_visibility
     dataset = TrackWindowDataset(TRAIN_SCENES, window=args.window,
-                                 stride=args.stride)
+                                 stride=args.stride,
+                                 min_visibility=min_visibility)
     print(f"{len(dataset)} janelas de treino", flush=True)
 
     model_name = {"appearance": "appearance", "geometry": "motion",
@@ -143,8 +171,9 @@ def main():
     loss_fn = None
     box_loss_fn = None
     if args.input in {"appearance", "both"}:
-        loss_fn = (ContrastiveIdentityLoss() if args.loss == "contrastive"
-                   else TripletIdentityLoss())
+        loss_fn = {"predictive": PredictiveContrastiveLoss,
+                   "contrastive": ContrastiveIdentityLoss,
+                   "triplet": TripletIdentityLoss}[args.loss]()
     if args.input in {"geometry", "both"}:
         box_loss_fn = SmoothL1BoxLoss()
 
@@ -156,7 +185,8 @@ def main():
     RESULTS.mkdir(parents=True, exist_ok=True)
 
     extra_base = {"track": "b", "input": args.input, "window": args.window,
-                  "name": model_name}
+                  "name": model_name, "loss": args.loss,
+                  "min_visibility": min_visibility}
     if encoder is not None:
         extra_base["encoder_proj"] = encoder.proj.state_dict()
 
@@ -189,18 +219,20 @@ def main():
         if mean < best:
             best = mean
             save_checkpoint(CHECKPOINTS / f"{args.name}_best.pt", model, kwargs,
-                            extra={**extra_base, "epoch": epoch, "loss": best})
+                            extra={**extra_base, "epoch": epoch, "epoch_loss": best})
 
     save_checkpoint(CHECKPOINTS / f"{args.name}_last.pt", model, kwargs,
-                    extra={**extra_base, "epoch": args.epochs, "loss": mean})
+                    extra={**extra_base, "epoch": args.epochs, "epoch_loss": mean})
 
     payload = {
-        "checkpoint": str(CHECKPOINTS / f"{args.name}_best.pt"),
+        # Relativo à raiz do PA2: o repositório roda em qualquer máquina.
+        "checkpoint": f"checkpoints/{args.name}_best.pt",
         "track": "b",
         "input": args.input,
         "cell": args.cell,
         "window": args.window,
         "loss": args.loss,
+        "min_visibility": min_visibility,
         "seed": args.seed,
         "best_loss": best,
     }

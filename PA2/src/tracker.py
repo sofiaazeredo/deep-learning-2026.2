@@ -11,8 +11,15 @@ import numpy as np
 
 import torch
 
-from src.association import cosine_cost, greedy_match, hungarian_match, iou_cost
-from src.boxes import norm_to_xywh, xywh_to_norm
+from src.association import (
+    cosine_cost,
+    enlarge_boxes,
+    gate,
+    greedy_match,
+    hungarian_match,
+    iou_cost,
+)
+from src.boxes import motion_features, norm_to_xywh, xywh_to_norm
 from src.model import unpack_step
 
 
@@ -33,6 +40,11 @@ class Track:
         self.confirmed = False
         self.state = None
         self.embedding = None
+        # Geometria: caixa (normalizada) que entrou no passo anterior, para a
+        # velocidade. 'both': último recorte observado, que entra no lugar da
+        # aparência quando a track roda para frente sem observação.
+        self.motion_prev = None
+        self.last_crop = None
 
 
 class Tracker:
@@ -43,11 +55,29 @@ class Tracker:
       min_hits        observações consecutivas antes de a track ser emitida
       matcher         'greedy' ou 'hungarian'
       motion          None (baseline); RNN de aparência / geometria / fusão
+
+    Com modelo, a associação é uma cascata:
+      1. tracks vistas no quadro anterior: IoU da última caixa;
+      2. tracks perdidas: IoU da última caixa (miss_prefer_iou, padrão);
+      3. o que sobrou: cosseno memória x consulta (ou IoU da caixa prevista
+         na geometria), COM o portão geométrico do enunciado — a detecção
+         só concorre se tiver IoU >= gate_iou com a última caixa aumentada
+         (1 + gate_growth x quadros perdidos) vezes.
+
+    Limiar do cosseno 0,5, gate_growth 0,6 e gate_iou 0,1 saem de
+    scripts/sweep_tracker.py, só nas cenas de treino.
+
+    prefer_confirmed (correção da Parte 4): as tracks tentativas VIVAS (ainda
+    sem min_hits) saem do estágio 1 e casam por IoU depois dos estágios 1 e 2
+    das confirmadas — um recém-nascido não rouba por IoU a detecção de uma
+    track confirmada. O estágio 3 (cosseno) roda depois das tentativas, e
+    tentativas perdidas seguem no estágio 2 como as confirmadas.
     """
 
     def __init__(self, iou_threshold=0.3, max_age=30, min_hits=3,
                  matcher="hungarian", motion=None, appearance_threshold=0.5,
-                 image_size=None, miss_prefer_iou=False):
+                 image_size=None, miss_prefer_iou=True, gate_growth=0.6,
+                 gate_iou=0.1, prefer_confirmed=False):
         self.iou_threshold = float(iou_threshold)
         self.max_age = int(max_age)
         self.min_hits = int(min_hits)
@@ -56,6 +86,12 @@ class Tracker:
         self.appearance_threshold = float(appearance_threshold)
         self.image_size = image_size or (1.0, 1.0)
         self.miss_prefer_iou = bool(miss_prefer_iou)
+        self.gate_growth = float(gate_growth)
+        self.gate_iou = float(gate_iou)
+        # Correção da Parte 4: tracks tentativas (recém-nascidas, ainda sem
+        # min_hits) só casam depois das confirmadas perdidas. Sem isso, a
+        # duplicata que nasce no quadro do miss ganha da track verdadeira.
+        self.prefer_confirmed = bool(prefer_confirmed)
         self.tracks = []
         self._next_id = 1
 
@@ -74,11 +110,22 @@ class Tracker:
 
     def _queries(self, embeddings, boxes=None):
         """
-        Recorte no espaço da memória: um passo a partir do estado zero.
+        Consulta de cada detecção. Modelo com cabeça de consulta: `query`,
+        só a aparência. Checkpoint antigo (ou modelo de teste sem `query`):
+        um passo a partir do estado zero, a consulta original.
         """
 
         device = self._device()
         kind = self._kind()
+
+        if getattr(self.motion, "has_query", False):
+            tensor = torch.as_tensor(np.asarray(embeddings), device=device,
+                                     dtype=torch.float32)
+            if tensor.dim() == 1:
+                tensor = tensor.unsqueeze(0)
+            with torch.no_grad():
+                return self.motion.query(tensor).detach().cpu().numpy()
+
         if kind == "both":
             width, height = self.image_size
             feats = []
@@ -117,17 +164,25 @@ class Tracker:
             if embedding is None:
                 return
             features = np.asarray(embedding, dtype=np.float32).reshape(-1)
-        elif kind == "geometry":
-            features = box_norm
         else:
-            vector = embedding
-            if vector is None:
-                vector = track.embedding
-            if vector is None:
-                dim = getattr(self.motion, "embed_dim", 128)
-                vector = np.zeros(dim, dtype=np.float32)
-            features = np.concatenate([np.asarray(vector, dtype=np.float32).reshape(-1),
-                                       box_norm])
+            # Cabeça de deslocamento: caixa + velocidade desde o passo
+            # anterior (o tracker dá um passo por quadro, então o buraco é 1).
+            if getattr(self.motion, "parameterization", "absolute") == "delta":
+                box_feat = motion_features(track.motion_prev, box_norm).numpy()
+            else:
+                box_feat = box_norm
+            track.motion_prev = box_norm
+
+            if kind == "geometry":
+                features = box_feat
+            else:
+                if embedding is not None:
+                    track.last_crop = np.asarray(embedding, dtype=np.float32).reshape(-1)
+                vector = track.last_crop
+                if vector is None:
+                    dim = getattr(self.motion, "embed_dim", 128)
+                    vector = np.zeros(dim, dtype=np.float32)
+                features = np.concatenate([vector, box_feat])
 
         tensor = torch.as_tensor(features, device=device, dtype=torch.float32)
         state = track.state
@@ -162,6 +217,10 @@ class Tracker:
                 if track.time_since_update == 0]
         lost = [i for i, track in enumerate(self.tracks)
                 if track.time_since_update > 0]
+        tentative = []
+        if self.prefer_confirmed:
+            tentative = [i for i in live if not self.tracks[i].confirmed]
+            live = [i for i in live if self.tracks[i].confirmed]
 
         pairs = []
         used_tracks, used_dets = set(), set()
@@ -185,6 +244,18 @@ class Tracker:
                 used_tracks.add(remain_tracks[a])
                 used_dets.add(remain_dets[b])
             remain_tracks = [i for i in lost if i not in used_tracks]
+            remain_dets = [j for j in range(len(detections)) if j not in used_dets]
+
+        # Tentativas vivas depois dos estágios de IoU das confirmadas (vivas e
+        # perdidas); o cosseno (estágio 3) vem depois delas.
+        if tentative and remain_dets:
+            boxes = np.stack([self.tracks[i].box for i in tentative])
+            leftover = detections[remain_dets]
+            for a, b in matcher(iou_cost(boxes, leftover),
+                                1.0 - self.iou_threshold):
+                pairs.append((tentative[a], remain_dets[b]))
+                used_tracks.add(tentative[a])
+                used_dets.add(remain_dets[b])
             remain_dets = [j for j in range(len(detections)) if j not in used_dets]
 
         if not remain_tracks or not remain_dets:
@@ -213,6 +284,17 @@ class Tracker:
         app_c = cosine_cost(memory, queries)
         cost = np.minimum(app_c, iou_c) if kind == "both" else app_c
         threshold = 0.5 if kind == "both" else self.appearance_threshold
+
+        # Portão geométrico: a última caixa cresce com os quadros perdidos,
+        # então quem reaparece um pouco longe ainda concorre, e quem
+        # reaparece do outro lado da cena não.
+        misses = np.array([self.tracks[i].time_since_update
+                           for i in remain_tracks], dtype=np.float64)
+        last_boxes = np.stack([self.tracks[i].box for i in remain_tracks])
+        grown = enlarge_boxes(last_boxes, 1.0 + self.gate_growth * misses)
+        cost = gate(cost, 1.0 - iou_cost(grown, leftover),
+                    iou_gate=self.gate_iou)
+
         for a, b in matcher(cost, threshold):
             pairs.append((remain_tracks[a], remain_dets[b]))
         return pairs

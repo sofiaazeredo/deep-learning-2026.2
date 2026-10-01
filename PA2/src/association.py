@@ -93,25 +93,34 @@ def cosine_cost(track_embeddings, detection_embeddings):
     return 1.0 - tracks @ dets.T
 
 
-def gate(cost, iou, iou_gate=0.3, sigma=None, row_mask=None):
+def enlarge_boxes(boxes, scale):
     """
-    Portão de associação. Geométrico por cima da aparência na Trilha B;
-    adaptativo pela incerteza prevista quando o modelo da Trilha A emite sigma.
+    Caixas (x, y, w, h) aumentadas `scale` vezes (uma escala por linha) em
+    volta do próprio centro.
+    """
+
+    boxes = np.asarray(boxes, dtype=np.float64).reshape(-1, 4)
+    scale = np.asarray(scale, dtype=np.float64).reshape(-1, 1)
+    center = boxes[:, :2] + boxes[:, 2:] / 2
+    size = boxes[:, 2:] * scale
+    return np.column_stack([center - size / 2, size])
+
+
+def gate(cost, iou, iou_gate=0.3, row_mask=None):
+    """
+    Portão geométrico por cima da aparência (Trilha B): par com IoU abaixo
+    de `iou_gate` ganha custo infinito e não casa, por menor que seja o
+    cosseno.
 
     `row_mask` (n_tracks,) True aplica o portão nessa track. Sem máscara,
-    aplica em todas. Pares abaixo do IoU ganham custo infinito.
+    aplica em todas.
     """
 
     gated = np.array(cost, dtype=np.float64, copy=True)
-    overlap = np.asarray(iou, dtype=np.float64)
-    blocked = overlap < iou_gate
+    blocked = np.asarray(iou, dtype=np.float64) < iou_gate
 
     if row_mask is not None:
         blocked = blocked & np.asarray(row_mask, dtype=bool).reshape(-1, 1)
-
-    if sigma is not None:
-        scale = np.asarray(sigma, dtype=np.float64).reshape(-1, 1)
-        blocked = blocked & (overlap < iou_gate * np.clip(scale, 0.5, 2.0))
 
     gated[blocked] = np.inf
     return gated

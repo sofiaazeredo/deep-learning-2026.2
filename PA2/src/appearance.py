@@ -48,7 +48,7 @@ def crop(frame, box, output_size=DEFAULT_CROP):
     from PIL import Image
 
     out_h, out_w = int(output_size[0]), int(output_size[1])
-    return np.asarray(Image.fromarray(patch).resize((out_w, out_h)))
+    return np.array(Image.fromarray(patch).resize((out_w, out_h)))
 
 
 class CropEncoder(nn.Module):
@@ -135,7 +135,7 @@ def load_embedding_cache(path):
 @torch.no_grad()
 def cache_sequence_embeddings(scene, encoder, kind="gt", detector="SDP",
                               root="data/MOT17", device="cpu",
-                              score_threshold=0.0, nms_threshold=0.5,
+                              score_threshold=None, nms_threshold=0.5,
                               batch_size=64):
     """
     kind='gt'  : chave (frame, id)
