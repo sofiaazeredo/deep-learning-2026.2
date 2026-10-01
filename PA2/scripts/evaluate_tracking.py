@@ -19,7 +19,7 @@ import argparse
 import csv
 from collections import defaultdict
 
-from src.dataset import load_sequence, resolve_root
+from src.dataset import TEST_SCENES, load_sequence, resolve_root
 from src.detection import public_detections
 from src.metrics import (
     average_precision,
@@ -56,7 +56,9 @@ def main():
                         choices=["all", "train", "test"])
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument("--detector", default="SDP")
-    parser.add_argument("--score-threshold", type=float, default=0.0)
+    parser.add_argument("--score-threshold", type=float, default=None,
+                        help="limiar para o AP; None = ranking inteiro (o AP "
+                             "mede o detector, não o limiar do rastreamento)")
     parser.add_argument("--nms-threshold", type=float, default=0.5)
     parser.add_argument("--root", default="data/MOT17")
     parser.add_argument("--name", required=True)
@@ -85,7 +87,7 @@ def main():
 
         row = {
             "sequence": scene,
-            "split": ("test" if scene in ("09", "11") else "train"),
+            "split": ("test" if scene in TEST_SCENES else "train"),
             "camera": info["camera"],
             "density": info["density"],
             "occlusion": info["occlusion"],
@@ -102,6 +104,9 @@ def main():
     if args.split in {"train", "test"}:
         rows = [row for row in rows if row["split"] == args.split]
 
+    if not rows:
+        raise SystemExit(f"nenhuma sequência do split {args.split} em {args.tracks}")
+
     out = RESULTS / f"{args.name}_per_sequence.csv"
     RESULTS.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="") as handle:
@@ -109,14 +114,18 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    if rows:
-        mean_idf1 = sum(row["idf1"] for row in rows) / len(rows)
-        mean_ap = sum(row["ap"] for row in rows) / len(rows)
-        switches = sum(row["id_switches"] for row in rows)
-        count_err = sum(row["id_count_error"] for row in rows) / len(rows)
-        print(f"média  AP={mean_ap:.3f}  IDF1={mean_idf1:.3f}  "
-              f"IDsw={switches}  count_err={count_err:.2f}")
-        print(f"gravado {out}")
+    # IDF1 do README = média por sequência (cada cena pesa igual); o
+    # agregado (somando IDTP/IDFP/IDFN) sai junto para quem quiser comparar.
+    mean_idf1 = sum(row["idf1"] for row in rows) / len(rows)
+    idtp = sum(row["idtp"] for row in rows)
+    pooled = 2 * idtp / (2 * idtp + sum(row["idfp"] for row in rows)
+                         + sum(row["idfn"] for row in rows))
+    mean_ap = sum(row["ap"] for row in rows) / len(rows)
+    switches = sum(row["id_switches"] for row in rows)
+    count_err = sum(row["id_count_error"] for row in rows) / len(rows)
+    print(f"média  AP={mean_ap:.3f}  IDF1={mean_idf1:.3f} (agregado {pooled:.3f})  "
+          f"IDsw={switches}  count_err={count_err:.2f}")
+    print(f"gravado {out}")
 
 
 if __name__ == "__main__":

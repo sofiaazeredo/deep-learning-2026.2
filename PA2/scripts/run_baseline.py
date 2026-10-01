@@ -23,7 +23,7 @@ from src.dataset import (
     load_sequence,
     resolve_root,
 )
-from src.detection import public_detections
+from src.detection import default_score_threshold, public_detections
 from src.metrics import drop_distractor_matches, evaluate_sequence
 from src.tracker import Tracker
 
@@ -127,6 +127,34 @@ def sweep(args, root):
     return best
 
 
+def sweep_score(args, root):
+    """
+    Limiar de score das detecções que entram no rastreamento, com a regra do
+    tracker congelada, só no treino.
+    """
+
+    rows = []
+    for threshold in args.sweep_score:
+        score = mean_idf1(list(TRAIN_SCENES), args.detector, args.matcher,
+                          args.iou_threshold, args.max_age, args.min_hits,
+                          threshold, args.nms_threshold, root)
+        rows.append({"detector": args.detector, "score_threshold": threshold,
+                     "idf1_train": score})
+        print(f"  {args.detector}  score >= {threshold:.2f}  IDF1 treino {score:.4f}",
+              flush=True)
+
+    path = RESULTS / f"{args.name}_score_sweep.csv"
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    best = max(rows, key=lambda row: row["idf1_train"])
+    print(f"melhor no treino: score >= {best['score_threshold']}  "
+          f"IDF1 {best['idf1_train']:.4f}")
+    print(f"gravado {path}")
+    return best
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--detector", default="SDP",
@@ -136,7 +164,9 @@ def main():
     parser.add_argument("--iou-threshold", type=float, default=0.2)
     parser.add_argument("--max-age", type=int, default=20)
     parser.add_argument("--min-hits", type=int, default=2)
-    parser.add_argument("--score-threshold", type=float, default=0.0)
+    parser.add_argument("--score-threshold", type=float, default=None,
+                        help="None = o da fonte (sem corte nas públicas; o do "
+                             "sweep no torchvision)")
     parser.add_argument("--nms-threshold", type=float, default=0.5)
     parser.add_argument("--split", default="all",
                         choices=["all", "train", "test"])
@@ -148,14 +178,22 @@ def main():
                         default=[1, 2, 3])
     parser.add_argument("--sweep-max-age", type=int, nargs="+",
                         default=[1, 5, 10, 20, 30])
+    parser.add_argument("--sweep-score", type=float, nargs="+", default=None,
+                        help="varre só o limiar de score (regra do tracker "
+                             "congelada), no treino — usado no torchvision")
     parser.add_argument("--root", default="data/MOT17")
     args = parser.parse_args()
 
     root = resolve_root(args.root)
     RESULTS.mkdir(parents=True, exist_ok=True)
+    if args.score_threshold is None:
+        args.score_threshold = default_score_threshold(args.detector)
 
     if args.sweep:
         sweep(args, root)
+        return
+    if args.sweep_score:
+        sweep_score(args, root)
         return
 
     available = list_scenes(root, detector=args.detector)

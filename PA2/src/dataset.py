@@ -17,6 +17,10 @@ import numpy as np
 
 SEQUENCE_ROOT = "data/MOT17"
 DETECTORS = ("DPM", "FRCNN", "SDP")
+# A segunda fonte da Parte 1: Faster R-CNN pré-treinado do torchvision, em
+# cache (scripts/detect_torchvision.py). Usa o gt e os quadros da pasta SDP.
+DETECTION_SOURCES = DETECTORS + ("torchvision",)
+TORCHVISION_CACHE = Path("cache") / "torchvision"
 
 # Pedestres reais (conf=1, class=1) formam o gt. Das outras classes, só as
 # distractoras do protocolo oficial (TrackEval, MOT17) — 2 pessoa em veículo,
@@ -67,7 +71,14 @@ def sequence_folder(name, detector="SDP"):
     raw = Path(str(name)).name
     if raw.startswith("MOT17-") and raw.count("-") >= 2:
         return raw
-    return f"MOT17-{scene_id(name)}-{detector}"
+    # O torchvision não tem pasta própria no MOT17: gt, seqinfo e quadros são
+    # os mesmos em DPM/FRCNN/SDP.
+    folder_detector = "SDP" if detector == "torchvision" else detector
+    return f"MOT17-{scene_id(name)}-{folder_detector}"
+
+
+def torchvision_det_path(scene, root=SEQUENCE_ROOT):
+    return resolve_root(root) / TORCHVISION_CACHE / f"MOT17-{scene_id(scene)}" / "det.txt"
 
 
 def read_mot_file(path):
@@ -249,7 +260,14 @@ def load_sequence(name, detector="SDP", root=SEQUENCE_ROOT):
     raw_gt = read_mot_file(path / "gt" / "gt.txt") if (path / "gt" / "gt.txt").exists() else []
     pedestrians, _ = split_ground_truth(raw_gt)
 
-    det_path = path / "det" / "det.txt"
+    if detector == "torchvision":
+        det_path = torchvision_det_path(scene, root)
+        if not det_path.exists():
+            raise FileNotFoundError(
+                f"sem detecções do torchvision para {scene}: rode "
+                f"python scripts/detect_torchvision.py (grava {det_path})")
+    else:
+        det_path = path / "det" / "det.txt"
     detections = read_mot_file(det_path) if det_path.exists() else []
 
     n_frames = info["seq_length"] or (max((row[0] for row in raw_gt), default=0))
@@ -279,6 +297,12 @@ def list_scenes(root=SEQUENCE_ROOT, detector="SDP"):
         return list(SCENES)
 
     found = []
+    if detector == "torchvision":
+        for path in sorted(train.glob("MOT17-*-SDP")):
+            if torchvision_det_path(path.name, root).exists():
+                found.append(scene_id(path.name))
+        return found
+
     for path in sorted(train.glob(f"MOT17-*-{detector}")):
         found.append(scene_id(path.name))
 
@@ -343,10 +367,15 @@ class TrackWindowDataset:
     """
     Trajetórias do ground truth fatiadas em janelas de T quadros, que é a
     unidade de BPTT truncado do treino da Parte 2 e do Eixo 1 da Parte 3.
+
+    `min_visibility` tira da janela as observações de pessoa escondida: o
+    recorte de quem tem visibility < limiar mostra o oclusor, não ela, e
+    viraria positivo errado na perda contrastiva. A memória só dá passo nas
+    observações que ficam, como na inferência.
     """
 
     def __init__(self, sequences, window=16, stride=1, detector="SDP",
-                 root=SEQUENCE_ROOT):
+                 root=SEQUENCE_ROOT, min_visibility=0.0):
         if window < 2:
             raise ValueError("window precisa ser >= 2")
         if set(scene_id(name) for name in sequences) & set(TEST_SCENES):
@@ -360,6 +389,9 @@ class TrackWindowDataset:
             info, gt, _ = load_sequence(name, detector=detector, root=root)
             by_frame = {}
             for row in gt:
+                if (row[8] is not None and min_visibility > 0
+                        and float(row[8]) < min_visibility):
+                    continue
                 by_frame.setdefault(int(row[0]), []).append(row)
 
             if not by_frame:

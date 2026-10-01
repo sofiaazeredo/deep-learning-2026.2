@@ -6,7 +6,7 @@ __pycache__/
 
 # Pesos: um único checkpoint final entra no repo (ou por link);
 # as dezenas de checkpoints de ablação, não.
-checkpoints/
+checkpoints/*
 *.pt
 *.pth
 *.zip

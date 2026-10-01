@@ -17,6 +17,24 @@ from src.metrics import iou_matrix
 
 COCO_PERSON = 1
 
+# Limiar de score das detecções que ENTRAM no rastreamento, por fonte. As
+# públicas entram como vieram (o MOTChallenge já as limiarizou; o DPM tem
+# score não calibrado e negativo em ~41% das linhas, e cortar em 0 jogava
+# parte do detector fora). O Faster R-CNN do torchvision é guardado a partir
+# de 0,05 (o piso do próprio modelo, para o AP ver o ranking inteiro); o
+# limiar de rastreamento dele sai do sweep no treino
+# (scripts/run_baseline.py --sweep-score).
+TORCHVISION_CACHE_SCORE = 0.05
+TRACK_SCORE_THRESHOLD = {"torchvision": 0.8}   # sweep no treino: 0,3 -> 0,366 ... 0,8 -> 0,461, 0,9 -> 0,433
+
+
+def default_score_threshold(detector):
+    """
+    None = sem corte (detecções públicas); um número = o limiar da fonte.
+    """
+
+    return TRACK_SCORE_THRESHOLD.get(detector)
+
 
 def nms(boxes, scores, iou_threshold=0.5):
     """
@@ -54,7 +72,7 @@ def _rows_to_detections(rows, score_threshold, nms_threshold):
 
     for row in rows:
         score = float(row[6]) if len(row) > 6 else 1.0
-        if score < score_threshold:
+        if score_threshold is not None and score < score_threshold:
             continue
         frame = int(row[0])
         box = (float(row[2]), float(row[3]), float(row[4]), float(row[5]))
@@ -74,7 +92,7 @@ def _rows_to_detections(rows, score_threshold, nms_threshold):
     return detections
 
 
-def public_detections(sequence, detector="SDP", score_threshold=0.0,
+def public_detections(sequence, detector="SDP", score_threshold=None,
                       nms_threshold=0.5):
     """
     Detecções públicas já filtradas por score e passadas pelo nosso NMS.
@@ -93,46 +111,58 @@ def public_detections(sequence, detector="SDP", score_threshold=0.0,
     return _rows_to_detections(rows, score_threshold, nms_threshold)
 
 
-def torchvision_detections(frames, score_threshold=0.5, device="cuda",
-                           nms_threshold=0.5):
+def load_torchvision_detector(device="cuda"):
     """
-    Faster R-CNN pré-treinado do torchvision, só a classe person do COCO.
-
-    `frames` é uma lista de imagens HWC RGB (uint8 ou float). Os números
-    de quadro começam em 1, como no MOT17. Aplica o nosso NMS depois do
-    filtro de score. O laço de rastreamento não chama isto: o resultado
-    entra em cache no formato det.txt (ver cache_torchvision_sequence).
+    Faster R-CNN pré-treinado no COCO (torchvision), em modo de inferência.
+    Carregado uma vez e reaproveitado em todos os blocos de quadros.
     """
 
-    import torch
     from torchvision.models.detection import (
         FasterRCNN_ResNet50_FPN_Weights,
         fasterrcnn_resnet50_fpn,
     )
-    from torchvision.transforms.functional import to_tensor
 
-    weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-    model = fasterrcnn_resnet50_fpn(weights=weights)
+    model = fasterrcnn_resnet50_fpn(weights=FasterRCNN_ResNet50_FPN_Weights.DEFAULT)
     model.eval()
     model.to(device)
+    return model
+
+
+def torchvision_detections(frames, score_threshold=0.5, device="cuda",
+                           nms_threshold=0.5, model=None, first_frame=1):
+    """
+    Faster R-CNN pré-treinado do torchvision, só a classe person do COCO.
+    `frames` é uma lista de imagens HWC RGB (uint8 ou float), numeradas a
+    partir de `first_frame` (1 no MOT17). `model` já carregado evita
+    recarregar a rede a cada bloco. Aplica o nosso NMS depois do filtro de
+    score. O laço de rastreamento não chama isto: o resultado entra em cache
+    no formato det.txt (ver cache_torchvision_sequence).
+    """
+
+    import torch
+    from torchvision.transforms.functional import to_tensor
+
+    if model is None:
+        model = load_torchvision_detector(device)
 
     detections = []
 
     with torch.no_grad():
-        for index, frame in enumerate(frames, start=1):
+        for index, frame in enumerate(frames, start=first_frame):
             image = np.asarray(frame)
             if image.dtype != np.uint8:
                 image = np.clip(image * 255.0, 0, 255).astype(np.uint8)
-
             tensor = to_tensor(image).to(device)
             output = model([tensor])[0]
 
             labels = output["labels"].detach().cpu().numpy()
             boxes_xyxy = output["boxes"].detach().cpu().numpy()
             scores = output["scores"].detach().cpu().numpy()
+
             person = labels == COCO_PERSON
             boxes_xyxy = boxes_xyxy[person]
             scores = scores[person]
+
             keep_score = scores >= score_threshold
             boxes_xyxy = boxes_xyxy[keep_score]
             scores = scores[keep_score]
@@ -173,23 +203,29 @@ def write_det_txt(path, detections):
 
 
 def cache_torchvision_sequence(sequence_dir, output_path, score_threshold=0.5,
-                               device="cuda", nms_threshold=0.5):
+                               device="cuda", nms_threshold=0.5, chunk_size=64):
     """
     Roda o Faster R-CNN numa pasta img1/ e grava det.txt. Tracking só lê
-    o arquivo — o detector não volta a rodar (~20 min / 5316 quadros).
+    o arquivo — o detector não volta a rodar. Os quadros são lidos em blocos
+    de `chunk_size`: uma sequência 1080p inteira não cabe na RAM.
     """
 
     from PIL import Image
 
     image_dir = Path(sequence_dir) / "img1"
     paths = sorted(image_dir.glob("*.jpg")) + sorted(image_dir.glob("*.png"))
-
     if not paths:
         raise FileNotFoundError(f"nenhum quadro em {image_dir}")
 
-    frames = [np.asarray(Image.open(path).convert("RGB")) for path in paths]
-    detections = torchvision_detections(frames, score_threshold=score_threshold,
-                                        device=device,
-                                        nms_threshold=nms_threshold)
+    model = load_torchvision_detector(device)
+    detections = []
+
+    for start in range(0, len(paths), chunk_size):
+        frames = [np.array(Image.open(path).convert("RGB"))
+                  for path in paths[start:start + chunk_size]]
+        detections.extend(torchvision_detections(
+            frames, score_threshold=score_threshold, device=device,
+            nms_threshold=nms_threshold, model=model, first_frame=start + 1))
+
     write_det_txt(output_path, detections)
     return detections

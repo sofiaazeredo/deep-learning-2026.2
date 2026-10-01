@@ -15,7 +15,7 @@ import argparse
 import csv
 
 from src.dataset import (
-    DETECTORS,
+    DETECTION_SOURCES,
     SCENES,
     create_splits,
     list_scenes,
@@ -29,14 +29,22 @@ from src.metrics import average_precision, drop_distractor_matches
 RESULTS = Path(__file__).resolve().parents[1] / "experiments" / "results"
 
 
-def measure_detectors(root, score_threshold=0.0, nms_threshold=0.5):
-    rows = []
+def measure_detectors(root, score_threshold=None, nms_threshold=0.5):
+    """
+    AP@0.5 e recall de cada fonte, no ranking inteiro (sem limiar de score:
+    o AP é quem decide até onde o ranking vale). As três públicas e o Faster
+    R-CNN do torchvision, se o cache existir.
+    """
 
-    print("\nAP@0.5 e recall das detecções públicas (depois do nosso NMS)")
-    print(f"{'scene':<8} {'det':<7} {'AP@0.5':>8} {'recall':>8} {'n_pred':>8}")
+    rows = []
+    sources = [source for source in DETECTION_SOURCES
+               if source != "torchvision" or list_scenes(root, detector=source)]
+
+    print("\nAP@0.5 e recall das fontes de detecção (depois do nosso NMS)")
+    print(f"{'scene':<8} {'det':<11} {'AP@0.5':>8} {'recall':>8} {'n_pred':>8}")
 
     for scene in SCENES:
-        for detector in DETECTORS:
+        for detector in sources:
             info, gt, raw = load_sequence(scene, detector=detector, root=root)
             dets = public_detections(raw, score_threshold=score_threshold,
                                      nms_threshold=nms_threshold)
@@ -59,7 +67,7 @@ def measure_detectors(root, score_threshold=0.0, nms_threshold=0.5):
                 "density": info["density"],
                 "occlusion": info["occlusion"],
             })
-            print(f"{scene:<8} {detector:<7} {ap:>8.3f} {details['recall']:>8.3f} "
+            print(f"{scene:<8} {detector:<11} {ap:>8.3f} {details['recall']:>8.3f} "
                   f"{details['n_pred']:>8}")
 
     path = RESULTS / "detector_measurement.csv"
@@ -70,11 +78,11 @@ def measure_detectors(root, score_threshold=0.0, nms_threshold=0.5):
         writer.writerows(rows)
 
     print(f"\nMédias por detector:")
-    for detector in DETECTORS:
+    for detector in sources:
         subset = [row for row in rows if row["detector"] == detector]
         mean_ap = sum(row["ap"] for row in subset) / len(subset)
         mean_rec = sum(row["recall"] for row in subset) / len(subset)
-        print(f"  {detector:<7} AP@0.5={mean_ap:.3f}  recall={mean_rec:.3f}")
+        print(f"  {detector:<11} AP@0.5={mean_ap:.3f}  recall={mean_rec:.3f}")
 
     print(f"gravado {path}")
     return rows
@@ -85,7 +93,7 @@ def main():
     parser.add_argument("--root", default="data/MOT17")
     parser.add_argument("--detector", default="SDP")
     parser.add_argument("--measure", action="store_true",
-                        help="AP@0.5 e recall de DPM, FRCNN e SDP nas 7 cenas")
+                        help="AP@0.5 e recall de DPM, FRCNN, SDP e torchvision nas 7 cenas")
     args = parser.parse_args()
 
     root = resolve_root(args.root)

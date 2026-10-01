@@ -19,6 +19,8 @@ checkpoints/*
 *.pt
 *.pth
 *.zip
+# ... exceto o modelo final (~0,7 MB), que é entregável.
+!checkpoints/temporal_best.pt
 
 # Vídeos gerados pela inferência
 *.mp4
