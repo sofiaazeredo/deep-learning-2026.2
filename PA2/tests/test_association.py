@@ -11,7 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
-from src.association import cosine_cost, gate, greedy_match, hungarian_match, iou_cost
+from src.association import (
+    cosine_cost,
+    enlarge_boxes,
+    gate,
+    greedy_match,
+    hungarian_match,
+    iou_cost,
+)
 
 
 def test_iou_cost_of_identical_boxes_is_zero():
@@ -67,6 +74,21 @@ def test_empty_cost():
 
     assert greedy_match(empty, 0.5) == []
     assert hungarian_match(empty, 0.5) == []
+
+
+def test_enlarge_boxes_keeps_the_center():
+    boxes = np.array([[10.0, 20.0, 4.0, 8.0]])
+
+    grown = enlarge_boxes(boxes, np.array([3.0]))
+
+    assert np.allclose(grown, [[6.0, 12.0, 12.0, 24.0]])   # centro (12, 24)
+
+
+def test_gate_without_mask_blocks_every_low_iou_pair():
+    cost = np.array([[0.1, 0.2]])
+    gated = gate(cost, np.array([[0.5, 0.0]]), iou_gate=0.01)
+
+    assert gated[0, 0] == 0.1 and np.isinf(gated[0, 1])
 
 
 def main():

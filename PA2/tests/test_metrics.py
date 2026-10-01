@@ -31,6 +31,7 @@ from src.metrics import (
     id_switches,
     fragmentations,
     mota,
+    occlusion_survival,
     unique_id_count_error,
     evaluate_sequence,
     average_precision,
@@ -405,6 +406,61 @@ def test_continuity_only_from_the_previous_frame():
 
     assert fragmentations(gt, pred) == 0
     assert id_switches(gt, pred) == 0
+
+
+# --- sobrevivência através da oclusão (Eixo 3) -----------------------------
+
+
+def occluded_track(frames=range(1, 11), hidden=(4, 5, 6), track_id=1):
+    """
+    Identidade no formato do gt.txt do MOT17: continua no gt quando está
+    escondida, com visibility baixa (é o campo que marca a oclusão).
+    """
+
+    return [(t, track_id, float(t), 0.0, 10.0, 10.0, 1, 1,
+             0.1 if t in hidden else 1.0) for t in frames]
+
+
+def test_identity_survives_the_occlusion():
+    gt = occluded_track()
+    pred = [(t, 10, float(t), 0.0, 10.0, 10.0) for t in (1, 2, 3, 7, 8, 9, 10)]
+
+    [event] = occlusion_survival(gt, pred)
+
+    assert (event["start"], event["end"], event["length"]) == (4, 6, 3)
+    assert event["scorable"] and event["survived"]
+
+
+def test_identity_comes_back_with_another_id():
+    gt = occluded_track()
+    pred = ([(t, 10, float(t), 0.0, 10.0, 10.0) for t in (1, 2, 3)]
+            + [(t, 20, float(t), 0.0, 10.0, 10.0) for t in (7, 8, 9, 10)])
+
+    [event] = occlusion_survival(gt, pred)
+
+    assert event["scorable"] and not event["survived"]
+
+
+def test_occlusion_without_a_match_after_is_not_scorable():
+    # Sem casamento depois (a track nunca volta) não dá para dizer se a
+    # identidade "sobreviveu": fica fora da taxa, não conta como falha.
+    gt = occluded_track()
+    pred = [(t, 10, float(t), 0.0, 10.0, 10.0) for t in (1, 2, 3)]
+
+    [event] = occlusion_survival(gt, pred)
+
+    assert not event["scorable"] and not event["survived"]
+
+
+def test_tracked_through_the_occlusion_also_survives():
+    # O detector às vezes ainda pega a pessoa semi-escondida: casada o tempo
+    # todo com o mesmo id também é sobrevivência.
+    gt = occluded_track()
+    pred = [(t, 10, float(t), 0.0, 10.0, 10.0) for t in range(1, 11)]
+
+    [event] = occlusion_survival(gt, pred)
+
+    assert event["survived"]
 
 
 def main():

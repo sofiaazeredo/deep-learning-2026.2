@@ -15,6 +15,7 @@ from src.dataset import (
     TRAIN_SCENES,
     TrackWindowDataset,
     create_splits,
+    list_scenes,
     load_sequence,
     median_occlusion,
     read_mot_file,
@@ -146,6 +147,67 @@ def test_median_occlusion_from_visibility_runs():
     tracks += [(t, 2, 0, 20, 10, 10, 1, 1, 1.0) for t in range(7)]
 
     assert median_occlusion(tracks) == 2.5
+
+
+def test_window_dataset_drops_low_visibility_crops(tmp_path):
+    # Recorte de pessoa escondida (visibility < 0,25) é o oclusor, não ela:
+    # não pode virar positivo no treino.
+    folder = tmp_path / "train" / "MOT17-02-SDP"
+    (folder / "gt").mkdir(parents=True)
+    (folder / "seqinfo.ini").write_text(
+        "[Sequence]\nname=MOT17-02-SDP\nimDir=img1\nframeRate=30\n"
+        "seqLength=3\nimWidth=100\nimHeight=100\nimExt=.jpg\n")
+    lines = []
+    for frame, vis in ((1, 1.0), (2, 0.1), (3, 0.9)):
+        lines.append(f"{frame},1,0,0,10,10,1,1,{vis}")
+        lines.append(f"{frame},2,50,0,10,10,1,1,1.0")
+    (folder / "gt" / "gt.txt").write_text("\n".join(lines) + "\n")
+
+    dataset = TrackWindowDataset(["02"], window=3, root=tmp_path,
+                                 min_visibility=0.25)
+
+    frames_of_1 = [frame for frame, _ in dataset[0]["identities"][1]]
+    assert frames_of_1 == [1, 3]
+
+
+def _fake_sdp_sequence(root):
+    folder = root / "train" / "MOT17-02-SDP"
+    (folder / "gt").mkdir(parents=True)
+    (folder / "det").mkdir()
+    (folder / "seqinfo.ini").write_text(
+        "[Sequence]\nname=MOT17-02-SDP\nimDir=img1\nframeRate=30\n"
+        "seqLength=2\nimWidth=100\nimHeight=100\nimExt=.jpg\n")
+    (folder / "gt" / "gt.txt").write_text("1,1,0,0,10,10,1,1,1\n2,1,1,0,10,10,1,1,1\n")
+    (folder / "det" / "det.txt").write_text("1,-1,0,0,10,10,0.9\n")
+    return folder
+
+
+def test_torchvision_source_reads_the_cached_detections(tmp_path):
+    # Mesmo gt e mesmos quadros da pasta SDP; as detecções vêm do cache do
+    # Faster R-CNN, não do det.txt público.
+    _fake_sdp_sequence(tmp_path)
+    cache = tmp_path / "cache" / "torchvision" / "MOT17-02"
+    cache.mkdir(parents=True)
+    (cache / "det.txt").write_text("1,-1,5,5,10,10,0.8\n2,-1,6,5,10,10,0.7\n")
+
+    info, gt, dets = load_sequence("02", detector="torchvision", root=tmp_path)
+
+    assert len(gt) == 2
+    assert len(dets) == 2 and dets[0][2] == 5.0
+    assert info["detector"] == "torchvision"
+    assert list_scenes(tmp_path, detector="torchvision") == ["02"]
+
+
+def test_torchvision_source_without_cache_says_how_to_build_it(tmp_path):
+    _fake_sdp_sequence(tmp_path)
+
+    try:
+        load_sequence("02", detector="torchvision", root=tmp_path)
+    except FileNotFoundError as error:
+        assert "detect_torchvision.py" in str(error)
+        return
+
+    raise AssertionError("sem cache deveria falhar dizendo como gerar")
 
 
 def main():
