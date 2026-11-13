@@ -1,18 +1,10 @@
-"""PA3 - Parte 0: o piso.
-
-(a) CNN pequena do zero  e  (b) ResNet-18 ImageNet com fine-tuning,
-ambas só com rotulos_{budget}.csv (default 5 por classe = 105 imagens).
-
-Seleção de época: SOMENTE no val. O test_public é avaliado uma única vez,
-no checkpoint escolhido pelo val.
-
+"""
 Uso (Colab):
     !unzip -q pa3_dados.zip -d dados
     !python part0.py --data dados --out resultados --budget 5 --seed 0
 
 Para a Parte 2 (piso nos 3 orçamentos / 3 seeds):
     for b, s in [(1,0),(5,0),(5,1),(5,2),(20,0)]: --budget b --seed s --which ft
-Cada execução de `ft` acrescenta uma linha em resultados/curva_orcamento.csv.
 """
 import argparse, copy, csv, json, os, random, time
 from pathlib import Path
