@@ -1,0 +1,17 @@
+{
+  "method": "part0_ft",
+  "budget": 5,
+  "seed": 0,
+  "cfg_hash": "74f0519278",
+  "cfg_source": "/content/pa3-poucos-rotulos/configs/selected/part0_ft_b5.json",
+  "params": 4034449,
+  "best_epoch": 22,
+  "epoch_train_acc_100": null,
+  "epoch_min_val_loss": 14,
+  "val_f1": 0.42890732014310534,
+  "val_acc": 0.4504950495049505,
+  "val_loss": 2.621099887507977,
+  "minutes": 2.585110139846802,
+  "test_f1": 0.42773783147523253,
+  "test_acc": 0.5006165228113441
+}

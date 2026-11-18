@@ -1,0 +1,11 @@
+metodo,orcamento,seed,f1_macro,acuracia
+fixmatch,1,0,0.2483,0.2281
+fixmatch,5,0,0.4765,0.5179
+fixmatch,5,1,0.5034,0.561
+fixmatch,5,2,0.4828,0.5302
+fixmatch,20,0,0.6681,0.6905
+piso,1,0,0.2231,0.2343
+piso,5,0,0.4277,0.5006
+piso,5,1,0.482,0.5043
+piso,5,2,0.4783,0.5117
+piso,20,0,0.6247,0.6732

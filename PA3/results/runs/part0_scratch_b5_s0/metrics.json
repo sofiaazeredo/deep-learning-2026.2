@@ -1,0 +1,17 @@
+{
+  "method": "part0_scratch",
+  "budget": 5,
+  "seed": 0,
+  "cfg_hash": "332ca2f81f",
+  "cfg_source": "/content/pa3-poucos-rotulos/configs/selected/part0_scratch_b5.json",
+  "params": 3923029,
+  "best_epoch": 80,
+  "epoch_train_acc_100": null,
+  "epoch_min_val_loss": 107,
+  "val_f1": 0.3393583461073157,
+  "val_acc": 0.36633663366336633,
+  "val_loss": 2.582567857043578,
+  "minutes": 5.531932536760966,
+  "test_f1": 0.29550282819452844,
+  "test_acc": 0.3193588162762022
+}
