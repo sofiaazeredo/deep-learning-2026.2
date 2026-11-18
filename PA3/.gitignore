@@ -1,0 +1,12 @@
+dados/*
+!dados/.gitkeep
+cache/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# pesos por run são grandes (45 MB cada): ficam no Drive. Só o modelo entregue é versionado.
+resultados/runs/*/weights.pt
+resultados/runs/*/test_probs.npy
+resultados/sweeps/*/trials/
+*.pt
+!pesos/modelo_final.pt

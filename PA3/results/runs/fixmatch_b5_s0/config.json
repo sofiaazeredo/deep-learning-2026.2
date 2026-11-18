@@ -1,0 +1,62 @@
+{
+  "model": {
+    "arch": "efficientnet_b0",
+    "pretrained": true
+  },
+  "data": {
+    "size": 320,
+    "resize_mode": "squash",
+    "preload_factor": 1.15
+  },
+  "aug": {
+    "weak_scale_min": 0.3,
+    "randaug_ops": 2,
+    "randaug_mag": 15,
+    "erase_p": 0.5,
+    "erase_scale": [
+      0.02,
+      0.2
+    ]
+  },
+  "train": {
+    "steps": 1500,
+    "eval_every": 250,
+    "bs": 16,
+    "mu": 3,
+    "lr": 0.00684,
+    "wd": 0.0005,
+    "momentum": 0.9,
+    "ema": 0.999
+  },
+  "fix": {
+    "tau": 0.95,
+    "lam": 1.0,
+    "corr": "flex",
+    "da_m": 0.999,
+    "flex_floor": 0.5,
+    "diag_taus": [
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      0.95,
+      0.99
+    ],
+    "share_top_k": 3
+  },
+  "workers": 4,
+  "_selecao": {
+    "metodo": "fixmatch",
+    "orcamento": 5,
+    "escolhido_no": "val",
+    "val_f1_mean": 0.40671368368861627,
+    "val_f1_std": null,
+    "seeds": [
+      0
+    ],
+    "n_trials": 6,
+    "resumo": "resultados/sweeps/fixmatch_b5/summary.csv"
+  },
+  "_source": "/content/pa3-poucos-rotulos/configs/selected/fixmatch_b5.json"
+}

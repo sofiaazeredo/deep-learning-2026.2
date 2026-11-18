@@ -1,0 +1,43 @@
+{
+  "model": {
+    "arch": "efficientnet_b0",
+    "pretrained": true
+  },
+  "data": {
+    "size": 320,
+    "resize_mode": "squash",
+    "preload_factor": 1.15
+  },
+  "aug": {
+    "scale_min": 0.7,
+    "hflip": 0.5,
+    "jitter": [
+      0.3,
+      0.3,
+      0.2
+    ],
+    "gray_p": 0.2
+  },
+  "train": {
+    "epochs": 20,
+    "bs": 32,
+    "optimizer": "adamw",
+    "lr": 0.00269,
+    "wd": 0.00119,
+    "pct_start": 0.15
+  },
+  "workers": 2,
+  "_selecao": {
+    "metodo": "part0_ft",
+    "orcamento": 1,
+    "escolhido_no": "val",
+    "val_f1_mean": 0.2663654656265494,
+    "val_f1_std": null,
+    "seeds": [
+      0
+    ],
+    "n_trials": 12,
+    "resumo": "resultados/sweeps/part0_ft_b1/summary.csv"
+  },
+  "_source": "/content/pa3-poucos-rotulos/configs/selected/part0_ft_b1.json"
+}

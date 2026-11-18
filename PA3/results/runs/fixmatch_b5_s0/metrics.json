@@ -1,0 +1,20 @@
+{
+  "method": "fixmatch",
+  "budget": 5,
+  "seed": 0,
+  "cfg_hash": "9203907dbb",
+  "cfg_source": "/content/pa3-poucos-rotulos/configs/selected/fixmatch_b5.json",
+  "params": 4034449,
+  "best_step": 1500,
+  "val_f1": 0.4072590030309281,
+  "val_acc": 0.41089108910891087,
+  "val_loss": 2.8638437880147802,
+  "mask_rate_last": 0.9881666769981384,
+  "sec_per_step": 0.8570761041099012,
+  "minutes": 21.522917544841768,
+  "test_f1": 0.4765257215305332,
+  "test_acc": 0.5178791615289766,
+  "top3_share_real": 0.26140567200986436,
+  "top3_share_pl_test": 0.3217665615141956,
+  "top3_share_pl_treino": 0.26516520977020264
+}
